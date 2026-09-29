@@ -1,4 +1,4 @@
-# AI Media Network Web v0.1.1
+# AI Media Network Web v0.1.2
 
 This release contains two things:
 
@@ -24,3 +24,7 @@ See `docs/ARCHITECTURE.md`.
 ## Current state
 
 The UI still uses mock data. The database schema is now real and is the foundation for the next API implementation.
+
+
+## v0.1.2
+Interfaz visible traducida al español (navegación, estados, botones, tablas, KPIs y etiquetas del Control Center).
