@@ -1,4 +1,4 @@
-# AI Media Network v1.0.0
+# AI Media Network v1.0.1
 
 Plataforma web integral para operar una red de medios digitales con inteligencia editorial, descubrimiento de historias, generación multiformato y distribución.
 

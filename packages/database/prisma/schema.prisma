@@ -298,6 +298,7 @@ model Story {
   profiles            StoryProfile[]
   contentPieces       ContentPiece[]
   runItems            DiscoveryRunItem[]
+  discoveryCandidates DiscoveryCandidate[]
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 

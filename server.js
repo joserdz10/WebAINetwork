@@ -27,7 +27,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.0.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.0.1',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.use('/api',dbGuard);
 
 app.get('/api/bootstrap',async(req,res)=>{try{const state=req.query.state||'NL';const [dashboard,identities,topics,profiles,watches,sources,activity]=await Promise.all([getDashboard(state),prisma.mediaIdentity.findMany({where:stateWhere(state),include:{mediaDNA:true,socialAccounts:true,stateBrain:true},orderBy:{name:'asc'}}),prisma.topic.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:[{priority:'desc'},{name:'asc'}]}),prisma.profile.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:{name:'asc'}}),prisma.watch.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{priority:'desc'}]}),prisma.source.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{name:'asc'}]}),prisma.activityEvent.findMany({orderBy:{createdAt:'desc'},take:20})]);res.json({ok:true,data:{dashboard,identities,topics,profiles,watches,sources,activity}})}catch(e){fail(res,e)}});
@@ -100,7 +100,7 @@ app.put('/api/settings/:key',async(req,res)=>{try{res.json({ok:true,data:await p
 app.use(express.static(publicDir));
 app.use((_req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 prepareDatabase().finally(()=>{
-  app.listen(port,()=>console.log(`AI Media Network v1.0.0 en puerto ${port}`));
+  app.listen(port,()=>console.log(`AI Media Network v1.0.1 en puerto ${port}`));
   setInterval(()=>{if(databaseReady)processScheduled(prisma).catch(e=>console.error('Scheduled worker',e.message))},60000);
   const every=Number(process.env.AUTO_DISCOVERY_INTERVAL_MINUTES||0);
   if(every>0)setInterval(()=>{if(databaseReady)runDiscovery(prisma,process.env.AUTO_DISCOVERY_STATE||'NL',{hours:Number(process.env.AUTO_DISCOVERY_HOURS||6)}).catch(e=>console.error('Auto discovery',e.message))},every*60000);
