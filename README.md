@@ -1,4 +1,4 @@
-# AI Media Network v1.0.1
+# AI Media Network v1.0.2
 
 Plataforma web integral para operar una red de medios digitales con inteligencia editorial, descubrimiento de historias, generación multiformato y distribución.
 
@@ -48,3 +48,9 @@ Las credenciales no se almacenan en PostgreSQL ni en la interfaz. Deben vivir en
 ## Nota sobre canales
 
 Facebook, Instagram y Telegram tienen adaptadores de publicación incluidos. X y TikTok están modelados como canales y formatos de contenido, pero la publicación directa requiere registrar y configurar sus APIs/OAuth correspondientes antes de activarlos.
+
+
+## Corrección v1.0.2
+- Las imágenes generadas por OpenAI que llegan como base64 ya no se abren como `data:` en una pestaña nueva.
+- La API sirve la imagen desde una ruta del mismo dominio: `/api/content-pieces/:id/image-file`.
+- Se agrega vista previa de imagen dentro del Estudio de contenido y se evita `about:blank#blocked`.
