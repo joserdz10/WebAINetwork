@@ -1,9 +1,0 @@
-{
-  "name": "ai-media-network-web",
-  "version": "0.1.1",
-  "private": true,
-  "scripts": {
-    "start": "node server.js"
-  },
-  "description": "AI Media Network Control Center prototype and real domain model foundation"
-}
