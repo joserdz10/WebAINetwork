@@ -62,7 +62,7 @@ const pages = {
 };
 function brainPage(name,type,desc,health,stats){ return `<div class="hero"><div><div class="eyebrow">${type}</div><h2>${name}</h2><p>${desc}</p></div><div><div class="hero-number">${health}%</div><div class="muted">Salud del conocimiento</div></div></div><div class="grid two-col"><div class="card brain"><span class="badge">EN LÍNEA</span><h3>Grafo de conocimiento</h3><p>Personas, organizaciones, lugares, temas, eventos y relaciones acumuladas por la plataforma.</p>${stats.map(s=>`<div class="metric-line"><span>${s}</span><span class="muted">indexado</span></div>`).join('')}</div><div>${section('Conocimiento reciente','Últimos cambios incorporados',activity())}</div></div>` }
 function listPage(title,sub,rows){ return section(title,sub,`<div class="card"><table class="table"><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${i===0?'strong':''}">${i===r.length-1?`<span class="badge ${String(c).includes('CONFIGURANDO')?'warn':''}">${c}</span>`:c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`) }
-function storyTable(title,sub){ return section(title,sub,`<div class="card"><table class="table"><thead><tr><th>Historia</th><th>Prioridad</th><th>Estado</th><th>Fuentes</th><th>Acciones</th></tr></thead><tbody>${data.stories.map((s,i)=>`<tr><td><div class="story-title">${s[1]}</div><div class="story-sub">${s[2]}</div></td><td><span class="priority ${i===0?'red':i===1?'yellow':'green'}">${s[0]}</span></td><td><span class="badge ${s[3].includes('ANALYZ')?'blue':''}">${s[3]}</span></td><td>${[5,4,6,3][i]}</td><td><button class="cta secondary" onclick="go('studio')">Abrir</button></td></tr>`).join('')}</tbody></table></div>`,'Nueva historia') }
+function storyTable(title,sub){ return section(title,sub,`<div class="card"><table class="table"><thead><tr><th>Historia</th><th>Prioridad</th><th>Estado</th><th>Fuentes</th><th>Acciones</th></tr></thead><tbody>${data.stories.map((s,i)=>`<tr><td><div class="story-title">${s[1]}</div><div class="story-sub">${s[2]}</div></td><td><span class="priority ${i===0?'red':i===1?'yellow':'green'}">${s[0]}</span></td><td><span class="badge ${s[3].includes('ANALYZ')?'blue':''}">${s[3]}</span></td><td>${s[4] ?? [5,4,6,3][i] ?? '—'}</td><td><button class="cta secondary" onclick="go('studio')">Abrir</button></td></tr>`).join('')}</tbody></table></div>`,'Nueva historia') }
 function go(page){
   if(!pages[page]) page='overview';
   location.hash=page;
@@ -72,6 +72,67 @@ function go(page){
   window.scrollTo({top:0,behavior:'instant'});
 }
 window.go=go;
+const statusLabels = {
+  ACTIVE:'ACTIVO', DRAFT:'CONFIGURANDO', PAUSED:'PAUSADO', ARCHIVED:'ARCHIVADO',
+  DISCOVERED:'DETECTADA', ANALYZING:'ANALIZANDO', READY:'LISTA', GENERATING:'GENERANDO', CONTENT_READY:'CONTENIDO LISTO',
+  APPROVED:'APROBADA', PUBLISHED:'PUBLICADA', REJECTED:'RECHAZADA',
+  CONNECTED:'CONECTADO', PENDING:'PENDIENTE', COMPLETED:'COMPLETADA', FAILED:'ERROR', QUEUED:'EN COLA'
+};
+const priorityLabels = { URGENT:'URGENTE', HIGH:'IMPORTANTE', NORMAL:'NORMAL', LOW:'BAJA' };
+
+function timeAgo(iso){
+  if(!iso) return '';
+  const min=Math.max(1,Math.floor((Date.now()-new Date(iso).getTime())/60000));
+  if(min<60) return `hace ${min} min`;
+  const h=Math.floor(min/60); if(h<24) return `hace ${h} h`;
+  return `hace ${Math.floor(h/24)} d`;
+}
+
+async function hydrateFromApi(){
+  try{
+    const [dashboardRes, identitiesRes] = await Promise.all([
+      fetch('/api/dashboard?state=NL'), fetch('/api/identities?state=NL')
+    ]);
+    if(!dashboardRes.ok) throw new Error('API todavía no conectada a PostgreSQL');
+    const dashboard = await dashboardRes.json();
+    const k=dashboard.kpis;
+    data.kpis = [
+      ['Cerebros Estatales',String(k.stateBrains),'datos reales'],
+      ['Identidades de medios',String(k.identities),`${dashboard.state.name}`],
+      ['Fuentes',String(k.sources),'activas'],
+      ['Monitoreos',String(k.watches),'activos'],
+      ['Historias / 24 h',String(k.stories24h),'desde PostgreSQL','up'],
+      ['Publicadas / 24 h',String(k.publications24h),'desde PostgreSQL','up']
+    ];
+    data.stories = dashboard.stories.map(s=>[
+      priorityLabels[s.priority]||s.priority,
+      s.title,
+      `${s.sourceCount} fuentes · ${timeAgo(s.detectedAt)}`,
+      statusLabels[s.status]||s.status,
+      s.sourceCount
+    ]);
+
+    if(identitiesRes.ok){
+      const identities = (await identitiesRes.json()).data;
+      data.identities = identities.map(i=>[
+        i.code || i.name.split(' ').map(x=>x[0]).join('').slice(0,3).toUpperCase(),
+        i.name,
+        i.description || i.stateBrain?.name || '',
+        (i.socialAccounts||[]).map(a=>a.platform==='FACEBOOK'?'Facebook':a.platform==='INSTAGRAM'?'Instagram':a.platform),
+        statusLabels[i.status]||i.status
+      ]);
+    }
+    const footer=document.querySelector('.sidebar-footer span');
+    if(footer) footer.textContent='Núcleo editorial v0.2.0 · PostgreSQL activo';
+    go(location.hash.replace('#','')||'overview');
+  }catch(error){
+    const footer=document.querySelector('.sidebar-footer span');
+    if(footer) footer.textContent='Núcleo editorial v0.2.0 · modo demostración';
+    console.info(error.message);
+  }
+}
+
 renderNav();
 go(location.hash.replace('#','')||'overview');
+hydrateFromApi();
 window.addEventListener('hashchange',()=>go(location.hash.replace('#','')||'overview'));

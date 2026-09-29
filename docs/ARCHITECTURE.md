@@ -1,38 +1,35 @@
-# AI Media Network Web - Architecture v0.1.1
+# AI Media Network — Arquitectura v0.2.0
 
-## Product layers
+```text
+                     WEB CONTROL CENTER
+                            |
+                         REST API
+                            |
+                 +----------+----------+
+                 |                     |
+             PostgreSQL             AI Core
+                 |                  (siguiente fase)
+                 |
+       +---------+---------+
+       |                   |
+   Intelligence         Editorial
+       |                   |
+StateBrain            Story
+MediaIdentity         ContentPiece
+MediaDNA              Publication
+Topic
+Profile
+Watch
+Source
+DiscoveryRun
+```
 
-1. Network: Country -> StateBrain -> MediaIdentity
-2. Intelligence: Shared knowledge concepts, Topics, Profiles, Watches, Sources
-3. Editorial: DiscoveryRun -> Story -> ContentPiece
-4. Distribution: SocialAccount -> Publication
-5. Interfaces: Web Control Center and Telegram Operator consume the same API Core
+## Principio principal
 
-## Core rule
+La web, Telegram y futuras integraciones no deben contener la lógica central. Todos deben consumir la misma API y el mismo modelo persistente.
 
-Business logic must not live inside Telegram, Facebook or the web UI. Those are clients/integrations. The API Core owns editorial state and workflows.
+## v0.2.0
 
-## First production slice
+La aplicación sigue desplegándose como un único servicio Node.js para simplificar el MVP. El servicio entrega los archivos web y expone `/api/*`. PostgreSQL es un servicio separado dentro del mismo proyecto Railway.
 
-Nuevo Leon StateBrain + Norte En Alerta MediaIdentity.
-
-End-to-end path:
-DiscoveryRun -> Story -> analysis -> ContentPiece -> approval -> Publication.
-
-## Next backend modules
-
-- states
-- identities
-- topics
-- profiles
-- watches
-- sources
-- discovery
-- stories
-- content
-- publications
-- integrations
-
-## Database
-
-PostgreSQL + Prisma. The first real schema is in `packages/database/prisma/schema.prisma`.
+Cuando el producto requiera escalamiento independiente, la API podrá separarse del frontend sin cambiar el modelo de dominio.

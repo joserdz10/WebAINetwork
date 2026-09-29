@@ -1,9 +1,18 @@
 {
   "name": "ai-media-network-web",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
+  "description": "AI Media Network Control Center with PostgreSQL, Prisma and REST API",
   "scripts": {
-    "start": "node server.js"
+    "build": "prisma generate --schema=packages/database/prisma/schema.prisma",
+    "start": "node server.js",
+    "db:generate": "prisma generate --schema=packages/database/prisma/schema.prisma",
+    "db:push": "prisma db push --schema=packages/database/prisma/schema.prisma",
+    "db:seed": "node packages/database/prisma/seed.js"
   },
-  "description": "AI Media Network Control Center prototype and real domain model foundation"
+  "dependencies": {
+    "@prisma/client": "6.16.2",
+    "express": "5.1.0",
+    "prisma": "6.16.2"
+  }
 }
