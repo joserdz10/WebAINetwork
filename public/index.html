@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Media Network — Control Center</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">AI</div>
+        <div><strong>AI MEDIA</strong><span>NETWORK</span></div>
+      </div>
+      <nav id="nav"></nav>
+      <div class="sidebar-footer">
+        <div class="status-dot"></div>
+        <div><b>System Online</b><span>Editorial Core v0.1.0</span></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">CONTROL CENTER</div>
+          <h1 id="page-title">Overview</h1>
+        </div>
+        <div class="top-actions">
+          <select id="workspace-select" aria-label="Workspace">
+            <option>México / Nuevo León</option>
+            <option>México / Hidalgo</option>
+            <option>México / Colima</option>
+          </select>
+          <button class="ghost">⌕ Search</button>
+          <button class="avatar">JR</button>
+        </div>
+      </header>
+      <section id="view" class="view"></section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
