@@ -166,6 +166,7 @@ model MediaIdentity {
   websiteUrl      String?
   stateBrain      StateBrain           @relation(fields: [stateBrainId], references: [id], onDelete: Cascade)
   mediaDNA        MediaDNA?
+  visualDNA       VisualDNA?
   contentPieces   ContentPiece[]
   socialAccounts  SocialAccount[]
   createdAt       DateTime             @default(now())
@@ -191,6 +192,24 @@ model MediaDNA {
   mediaIdentity      MediaIdentity @relation(fields: [mediaIdentityId], references: [id], onDelete: Cascade)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
+}
+
+
+model VisualDNA {
+  id                  String        @id @default(cuid())
+  mediaIdentityId     String        @unique
+  palette             Json?
+  typography          Json?
+  layoutStyle         String?
+  photoTreatment      String?
+  overlayStyle        String?
+  logoPlacement       String?
+  referenceImageUrl   String?
+  formatRules         Json?
+  promptInstructions  String?
+  mediaIdentity       MediaIdentity @relation(fields: [mediaIdentityId], references: [id], onDelete: Cascade)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 }
 
 model Topic {

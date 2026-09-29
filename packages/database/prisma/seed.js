@@ -12,12 +12,33 @@ const STATES = [
  ['veracruz','Veracruz','VER'],['yucatan','Yucatán','YUC'],['zacatecas','Zacatecas','ZAC']
 ];
 
+
+const neaVisualDNA={
+  palette:{mode:'brand',notes:'Usar exclusivamente la paleta oficial configurada para Norte En Alerta; alto contraste; evitar colores ajenos a la marca.'},
+  typography:{headline:'Sans serif condensada o display de alto impacto',body:'Sans serif limpia y legible',rules:'Titulares grandes, jerarquía fuerte y texto mínimo.'},
+  layoutStyle:'Editorial periodístico contemporáneo, modular, contundente, con jerarquía clara de titular e imagen.',
+  photoTreatment:'Fotografía documental/periodística con contraste controlado; no inventar escenas ni elementos no confirmados.',
+  overlayStyle:'Bloques gráficos sólidos, barras y marcos consistentes con la identidad; evitar efectos genéricos, brillos y estilos de stock.',
+  logoPlacement:'Reservar zona segura para marca Norte En Alerta; no inventar ni redibujar logotipo si no existe asset configurado.',
+  formatRules:{FACEBOOK_POST:{ratio:'4:5',composition:'feed vertical'},INSTAGRAM_POST:{ratio:'4:5',composition:'feed vertical'},FACEBOOK_STORY:{ratio:'9:16',composition:'story vertical'},INSTAGRAM_STORY:{ratio:'9:16',composition:'story vertical'},INSTAGRAM_REEL:{ratio:'9:16',composition:'reel cover'},TIKTOK:{ratio:'9:16',composition:'vertical video cover'},EDITORIAL_GRAPHIC:{ratio:'3:4',composition:'editorial poster'},X_POST:{ratio:'1:1',composition:'square social'},ARTICLE:{ratio:'16:9',composition:'web hero'}},
+  promptInstructions:'La imagen debe sentirse inequívocamente como una pieza de Norte En Alerta y no como una imagen genérica de noticias. Mantener lenguaje visual consistente entre publicaciones. No inventar logotipos, escudos, textos pequeños ni datos. Priorizar composición editorial y espacio para titular real.'
+};
 async function upsertIdentity(stateBrainId, def){
   const row=await prisma.mediaIdentity.upsert({where:{slug:def.slug},update:{name:def.name,code:def.code,status:def.status,description:def.description,stateBrainId},create:{stateBrainId,...def}});
   if(def.dna){
     await prisma.mediaDNA.upsert({where:{mediaIdentityId:row.id},update:def.dna,create:{mediaIdentityId:row.id,...def.dna}});
   }
+  if(def.visualDNA){
+    await prisma.visualDNA.upsert({where:{mediaIdentityId:row.id},update:def.visualDNA,create:{mediaIdentityId:row.id,...def.visualDNA}});
+  }
   return row;
+}
+
+async function ensureVisualDefaults(){
+  const nea=await prisma.mediaIdentity.findUnique({where:{slug:'norte-en-alerta'}});
+  if(nea){
+    await prisma.visualDNA.upsert({where:{mediaIdentityId:nea.id},update:neaVisualDNA,create:{mediaIdentityId:nea.id,...neaVisualDNA}});
+  }
 }
 
 async function seedDatabase(){
@@ -33,8 +54,9 @@ async function seedDatabase(){
   }
   const nl=stateMap.NL, hgo=stateMap.HGO, col=stateMap.COL;
   const dna={tone:'Directo e informativo',editorialStyle:'Periodístico local, ágil y verificable',geographicFocus:'Nuevo León',headlineStyle:'Corto, claro y de alto impacto informativo',politicalTone:'Neutral',audience:'Audiencia general de Nuevo León',language:'es-MX',avoidRules:['Clickbait excesivo','Afirmaciones no verificadas','Lenguaje partidista','Predicciones electorales propias'],preferredFormats:['FACEBOOK_POST','INSTAGRAM_POST','INSTAGRAM_STORY','INSTAGRAM_REEL','ARTICLE'],promptInstructions:'Priorizar hechos verificables, atribuir afirmaciones y separar información confirmada de versiones.'};
+
   const identities={};
-  identities.nea=await upsertIdentity(nl.id,{slug:'norte-en-alerta',name:'Norte En Alerta',code:'NEA',status:'ACTIVE',description:'Generalista · Nuevo León',dna});
+  identities.nea=await upsertIdentity(nl.id,{slug:'norte-en-alerta',name:'Norte En Alerta',code:'NEA',status:'ACTIVE',description:'Generalista · Nuevo León',dna,visualDNA:neaVisualDNA});
   identities.cr=await upsertIdentity(nl.id,{slug:'codigo-regio',name:'Código Regio',code:'CR',status:'ACTIVE',description:'Ciudad y seguridad',dna:{...dna,tone:'Directo, urbano e informativo'}});
   identities.pn=await upsertIdentity(nl.id,{slug:'punto-norte',name:'Punto Norte',code:'PN',status:'ACTIVE',description:'Información local',dna:{...dna,tone:'Cercano, útil e informativo'}});
   identities.cp=await upsertIdentity(nl.id,{slug:'circulo-politico-nl',name:'Círculo Político NL',code:'CPNL',status:'ACTIVE',description:'Política estatal',dna:{...dna,tone:'Analítico y sobrio',editorialStyle:'Política pública y vida institucional con neutralidad factual'}});
@@ -83,4 +105,4 @@ async function seedDatabase(){
 }
 
 if(require.main===module){seedDatabase().then(()=>console.log('Seed v1.0 completado')).catch(e=>{console.error(e);process.exitCode=1}).finally(()=>prisma.$disconnect())}
-module.exports={seedDatabase};
+module.exports={seedDatabase,ensureVisualDefaults};

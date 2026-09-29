@@ -35,12 +35,12 @@ async function callAI({ system, input, jsonSchema }) {
   return jsonSchema ? JSON.parse(text) : text;
 }
 
-async function generateImage(prompt) {
+async function generateImage(prompt, options={}) {
   if (!hasAI()) return null;
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method:'POST',
     headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-    body:JSON.stringify({model:process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',prompt,size:'1024x1024'})
+    body:JSON.stringify({model:process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',prompt,size:options.size||'1024x1024'})
   });
   if (!res.ok) throw new Error(`OPENAI_IMAGE_${res.status}: ${await res.text()}`);
   const data = await res.json();

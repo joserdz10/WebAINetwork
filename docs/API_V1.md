@@ -53,3 +53,7 @@
 - `GET /api/activity`
 - `GET /api/errors`
 - `POST /api/errors/:id/resolve`
+
+
+### Visual DNA
+`PUT /api/identities/:id/visual-dna` persists the visual identity used by the Visual Engine.

@@ -26,7 +26,7 @@ async function generatePiece(prisma,{publicId,identityId,type}){
   if(!FORMAT_RULES[type]) throw new Error('INVALID_CONTENT_TYPE');
   const story=await prisma.story.findUnique({where:{publicId},include:{stateBrain:true,sources:{include:{source:true}},topics:{include:{topic:true}},profiles:{include:{profile:true}}}});
   if(!story) throw new Error('STORY_NOT_FOUND');
-  const identity=await prisma.mediaIdentity.findUnique({where:{id:identityId},include:{mediaDNA:true}});
+  const identity=await prisma.mediaIdentity.findUnique({where:{id:identityId},include:{mediaDNA:true,visualDNA:true}});
   if(!identity) throw new Error('IDENTITY_NOT_FOUND');
   const dna=identity.mediaDNA||{};
   const schema={name:'content_piece',schema:{type:'object',additionalProperties:false,properties:{headline:{type:'string'},copy:{type:['string','null']},body:{type:['string','null']},imagePrompt:{type:['string','null']}},required:['headline','copy','body','imagePrompt']}};
@@ -53,10 +53,27 @@ async function generatePieces(prisma,args){
 }
 
 async function generatePieceImage(prisma,id){
-  const piece=await prisma.contentPiece.findUnique({where:{id},include:{story:true,mediaIdentity:{include:{mediaDNA:true}}}});
+  const piece=await prisma.contentPiece.findUnique({where:{id},include:{story:true,mediaIdentity:{include:{mediaDNA:true,visualDNA:true}}}});
   if(!piece) throw new Error('CONTENT_PIECE_NOT_FOUND');
-  const prompt=piece.generationPrompt||`Imagen editorial periodística para ${piece.mediaIdentity.name} sobre ${piece.story.title}. Neutral, factual, sin texto.`;
-  const imageUrl=await generateImage(prompt);
+  const v=piece.mediaIdentity.visualDNA||{};
+  const format=(v.formatRules&&v.formatRules[piece.type])||{};
+  const ratio=format.ratio||'1:1';
+  const size=ratio==='16:9'?'1536x1024':(ratio==='1:1'?'1024x1024':'1024x1536');
+  const basePrompt=piece.generationPrompt||`Imagen editorial periodística sobre ${piece.story.title}.`;
+  const visualPrompt=[
+    `IDENTIDAD VISUAL: ${piece.mediaIdentity.name}.`,
+    `FORMATO: ${piece.type}; relación objetivo ${ratio}; ${format.composition||''}.`,
+    `PALETA: ${JSON.stringify(v.palette||{})}.`,
+    `TIPOGRAFÍA/ESPACIO DE TEXTO: ${JSON.stringify(v.typography||{})}.`,
+    `COMPOSICIÓN: ${v.layoutStyle||'editorial periodística clara'}.`,
+    `FOTOGRAFÍA: ${v.photoTreatment||'documental y factual'}.`,
+    `OVERLAYS: ${v.overlayStyle||'sobrios y consistentes'}.`,
+    `MARCA: ${v.logoPlacement||'reservar área segura; no inventar logotipo'}.`,
+    `REGLAS DE IDENTIDAD: ${v.promptInstructions||'mantener consistencia visual de la identidad'}.`,
+    `CONTENIDO: ${basePrompt}`,
+    'No inventar texto, logotipos, cifras, uniformes, personas o símbolos no confirmados. Si hay texto en la composición, dejar espacio limpio para que la plataforma lo aplique después.'
+  ].join('\n');
+  const imageUrl=await generateImage(visualPrompt,{size});
   if(!imageUrl) throw new Error('IMAGE_AI_NOT_CONFIGURED');
   return prisma.contentPiece.update({where:{id},data:{imageUrl}});
 }

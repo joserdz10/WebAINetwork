@@ -56,8 +56,12 @@ Facebook, Instagram y Telegram tienen adaptadores de publicación incluidos. X y
 - Se agrega vista previa de imagen dentro del Estudio de contenido y se evita `about:blank#blocked`.
 
 
-## v1.0.4
+## v1.1.0
 - Corrige versionado real de `/api/health` y logs de arranque.
 - Mantiene la ruta segura `/api/content-pieces/:id/image-file`.
-- Hace visible la etiqueta Visual Engine 1.0.4 en Resultado visual.
-- Fuerza recarga de frontend con cache busting 1.0.4.
+- Hace visible la etiqueta Visual Engine 1.1.0 en Resultado visual.
+- Fuerza recarga de frontend con cache busting 1.1.0.
+
+
+## v1.1.0 — Visual DNA
+Cada identidad ahora separa ADN Editorial y ADN Visual. El Visual Engine utiliza paleta, tipografía, composición, tratamiento fotográfico, overlays, ubicación de marca y reglas por formato para generar piezas coherentes con cada medio. Norte En Alerta incluye una configuración visual inicial editable desde Identidades → ADN editorial + visual.

@@ -45,3 +45,7 @@ Country, StateBrain, MediaIdentity, MediaDNA, Topic, Profile, Watch, Source, Dis
 5. Política/electoral se trata de forma factual y neutral; el sistema no debe persuadir ni recomendar opciones políticas.
 6. Secretos fuera de base de datos.
 7. Telegram y Web consumen el mismo núcleo.
+
+
+## Visual DNA (v1.1.0)
+`MediaIdentity` now has two independent profiles: `MediaDNA` for editorial behavior and `VisualDNA` for visual behavior. VisualDNA stores palette rules, typography, composition, photographic treatment, overlays, brand placement, reference URL, format-specific ratios and visual prompt instructions. The Visual Engine merges Story + ContentPiece type + VisualDNA before calling image generation.
