@@ -1,6 +1,19 @@
-# AI Media Network v1.0.2
+# AI Media Network v1.3.0
 
 Plataforma web integral para operar una red de medios digitales con inteligencia editorial, descubrimiento de historias, generación multiformato y distribución.
+
+
+## v1.3.0 — PSD Master + Template Library
+
+- `NEA_FEED_4X5_V1` permanece como plantilla canónica activa de Norte En Alerta.
+- Todas las identidades existentes y futuras tienen una Biblioteca de Plantillas.
+- Se puede subir un PSD maestro de hasta 30 MB y conservarlo dentro de PostgreSQL.
+- El sistema lee dimensiones y nombres de capas PSD cuando están disponibles.
+- Convención recomendada para capas dinámicas: `PHOTO`, `CATEGORY`, `HEADLINE`, `SUMMARY`, `SOURCE`.
+- Para render automático, la plantilla puede incluir una base PNG/JPG exportada desde el PSD con las capas dinámicas ocultas.
+- El mapeo de campos puede revisarse y ajustarse desde la plataforma.
+- Las plantillas se versionan, pueden activarse/desactivarse y el motor selecciona la plantilla activa por formato.
+- El PSD se conserva como archivo maestro; el servidor no requiere Photoshop para renderizar publicaciones.
 
 ## Qué incluye
 
@@ -67,7 +80,7 @@ Facebook, Instagram y Telegram tienen adaptadores de publicación incluidos. X y
 Cada identidad ahora separa ADN Editorial y ADN Visual. El Visual Engine utiliza paleta, tipografía, composición, tratamiento fotográfico, overlays, ubicación de marca y reglas por formato para generar piezas coherentes con cada medio. Norte En Alerta incluye una configuración visual inicial editable desde Identidades → ADN editorial + visual.
 
 
-## v1.2.0 — Template Library
+## v1.3.0 — Template Library
 - Añade plantillas gráficas bloqueadas por identidad.
 - Registra `NEA_FEED_4X5_V1` para Norte En Alerta (1080×1350).
 - La IA genera únicamente la fotografía fuente; el Template Engine aplica marca, titular, categoría, bajada y fuente.

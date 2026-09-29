@@ -35,11 +35,48 @@ async function renderNorteEnAlertaFeed({photo,headline,category,summary,source})
    {input:mark,left:65,top:1255}
  ]).png().toBuffer();
 }
+
+function textSvg(width,height,layerMap,data){
+  const chunks=[];
+  const values={HEADLINE:data.headline,CATEGORY:data.category,SUMMARY:data.summary,SOURCE:data.source};
+  for(const [field,value] of Object.entries(values)){
+    const m=layerMap?.[field]; if(!m||!value) continue;
+    const size=Number(m.fontSize||24), lineHeight=Math.round(size*1.15), maxLines=Number(m.maxLines||1);
+    const chars=Math.max(8,Math.floor(Number(m.width||300)/(size*.56)));
+    const lines=wrap(value,chars,maxLines);
+    const x=Number(m.x??m.left??0), y=Number(m.y??m.top??0)+size;
+    const anchor=m.align==='center'?'middle':m.align==='right'?'end':'start';
+    const tx=m.align==='center'?x+Number(m.width||0)/2:m.align==='right'?x+Number(m.width||0):x;
+    chunks.push(`<text x="${tx}" y="${y}" fill="${esc(m.color||'#111111')}" font-family="${esc(m.fontFamily||'Arial, Helvetica, sans-serif')}" font-size="${size}" font-weight="${Number(m.fontWeight||600)}" text-anchor="${anchor}">${lines.map((line,i)=>`<tspan x="${tx}" dy="${i?lineHeight:0}">${esc(line)}</tspan>`).join('')}</text>`);
+  }
+  return Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${chunks.join('')}</svg>`);
+}
+
+async function renderGenericLayered(template,data){
+  if(!template.baseImageData) throw new Error('TEMPLATE_BASE_IMAGE_REQUIRED');
+  const width=template.width,height=template.height,map=template.layerMap||{};
+  let base=Buffer.from(template.baseImageData);
+  base=await sharp(base).resize(width,height,{fit:'fill'}).png().toBuffer();
+  const composites=[];
+  if(map.PHOTO){
+    const p=map.PHOTO, photo=await sourceBuffer(data.photo);
+    const prepared=await sharp(photo).resize(Math.max(1,Number(p.width||width)),Math.max(1,Number(p.height||height)),{fit:p.fit||'cover',position:'attention'}).png().toBuffer();
+    composites.push({input:prepared,left:Number(p.left??p.x??0),top:Number(p.top??p.y??0)});
+  }
+  composites.push({input:textSvg(width,height,map,data),left:0,top:0});
+  return sharp(base).composite(composites).png().toBuffer();
+}
+
 function selectTemplate(identity,type,templates=[]){
- const active=templates.filter(t=>t.isActive!==false);
- const exact=active.find(t=>t.format===type);if(exact)return exact;
- if(identity?.slug==='norte-en-alerta'&&['FACEBOOK_POST','INSTAGRAM_POST','EDITORIAL_GRAPHIC'].includes(type))return {code:'NEA_FEED_4X5_V1',renderer:'NEA_FEED_4X5',format:type,width:1080,height:1350};
+ const active=templates.filter(t=>t.isActive!==false&&t.status!=='DISABLED');
+ const exact=active.find(t=>t.format===type&&t.status==='READY');if(exact)return exact;
+ const compatible=active.find(t=>t.status==='READY'&&Array.isArray(t.configuration?.compatibleFormats)&&t.configuration.compatibleFormats.includes(type));if(compatible)return compatible;
+ if(identity?.slug==='norte-en-alerta'&&['FACEBOOK_POST','INSTAGRAM_POST','EDITORIAL_GRAPHIC'].includes(type))return {code:'NEA_FEED_4X5_V1',renderer:'NEA_FEED_4X5',format:type,width:1080,height:1350,status:'READY'};
  return null;
 }
-async function renderTemplate(template,data){if(template?.renderer==='NEA_FEED_4X5')return renderNorteEnAlertaFeed(data);throw new Error('TEMPLATE_RENDERER_NOT_SUPPORTED')}
+async function renderTemplate(template,data){
+ if(template?.renderer==='NEA_FEED_4X5')return renderNorteEnAlertaFeed(data);
+ if(template?.renderer==='GENERIC_LAYERED')return renderGenericLayered(template,data);
+ throw new Error('TEMPLATE_RENDERER_NOT_SUPPORTED');
+}
 module.exports={selectTemplate,renderTemplate};

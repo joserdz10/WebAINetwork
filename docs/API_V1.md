@@ -57,3 +57,13 @@
 
 ### Visual DNA
 `PUT /api/identities/:id/visual-dna` persists the visual identity used by the Visual Engine.
+
+
+## Template Library v1.3.0
+
+- `GET /api/identities/:id/templates`
+- `POST /api/identities/:id/templates/upload` (JSON base64: PSD maestro + base opcional)
+- `PUT /api/templates/:id/mapping`
+- `POST /api/templates/:id/activate`
+- `GET /api/templates/:id/master`
+- `GET /api/templates/:id/base-image`

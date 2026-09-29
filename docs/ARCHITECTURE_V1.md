@@ -49,3 +49,8 @@ Country, StateBrain, MediaIdentity, MediaDNA, Topic, Profile, Watch, Source, Dis
 
 ## Visual DNA (v1.1.0)
 `MediaIdentity` now has two independent profiles: `MediaDNA` for editorial behavior and `VisualDNA` for visual behavior. VisualDNA stores palette rules, typography, composition, photographic treatment, overlays, brand placement, reference URL, format-specific ratios and visual prompt instructions. The Visual Engine merges Story + ContentPiece type + VisualDNA before calling image generation.
+
+
+## Template Library v1.3.0
+
+MediaIdentity -> MediaTemplate. Cada plantilla conserva PSD maestro, base renderizable, mapeo de campos, versión, estado y formato. El renderer integrado de Norte En Alerta sigue disponible y los PSD cargados usan `GENERIC_LAYERED` una vez que están listos.

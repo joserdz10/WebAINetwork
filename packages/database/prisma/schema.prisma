@@ -220,17 +220,29 @@ model MediaTemplate {
   name             String
   format           String
   renderer         String
+  sourceType       String        @default("BUILT_IN")
+  status           String        @default("READY")
   width            Int
   height           Int
   version          Int           @default(1)
   isActive         Boolean       @default(true)
   referenceImageUrl String?
+  masterFileName   String?
+  masterMimeType   String?
+  masterFileSize   Int?
+  masterFileData   Bytes?
+  baseImageMimeType String?
+  baseImageData    Bytes?
+  detectedLayers   Json?
+  layerMap         Json?
+  compiledDefinition Json?
   configuration    Json?
   mediaIdentity    MediaIdentity @relation(fields: [mediaIdentityId], references: [id], onDelete: Cascade)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   @@index([mediaIdentityId, format, isActive])
+  @@index([mediaIdentityId, status])
 }
 
 model Topic {

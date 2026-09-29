@@ -38,7 +38,7 @@ async function ensureVisualDefaults(){
   const nea=await prisma.mediaIdentity.findUnique({where:{slug:'norte-en-alerta'}});
   if(nea){
     await prisma.visualDNA.upsert({where:{mediaIdentityId:nea.id},update:neaVisualDNA,create:{mediaIdentityId:nea.id,...neaVisualDNA}});
-    await prisma.mediaTemplate.upsert({where:{code:'NEA_FEED_4X5_V1'},update:{mediaIdentityId:nea.id,name:'Norte En Alerta · Feed 4:5',format:'INSTAGRAM_POST',renderer:'NEA_FEED_4X5',width:1080,height:1350,version:1,isActive:true,configuration:{compatibleFormats:['INSTAGRAM_POST','FACEBOOK_POST','EDITORIAL_GRAPHIC'],brandLocked:true}},create:{mediaIdentityId:nea.id,code:'NEA_FEED_4X5_V1',name:'Norte En Alerta · Feed 4:5',format:'INSTAGRAM_POST',renderer:'NEA_FEED_4X5',width:1080,height:1350,version:1,isActive:true,configuration:{compatibleFormats:['INSTAGRAM_POST','FACEBOOK_POST','EDITORIAL_GRAPHIC'],brandLocked:true}}});
+    await prisma.mediaTemplate.upsert({where:{code:'NEA_FEED_4X5_V1'},update:{mediaIdentityId:nea.id,name:'Norte En Alerta · Feed 4:5',format:'INSTAGRAM_POST',renderer:'NEA_FEED_4X5',sourceType:'BUILT_IN',status:'READY',width:1080,height:1350,version:1,isActive:true,configuration:{compatibleFormats:['INSTAGRAM_POST','FACEBOOK_POST','EDITORIAL_GRAPHIC'],brandLocked:true,managedBy:'SYSTEM'}},create:{mediaIdentityId:nea.id,code:'NEA_FEED_4X5_V1',name:'Norte En Alerta · Feed 4:5',format:'INSTAGRAM_POST',renderer:'NEA_FEED_4X5',sourceType:'BUILT_IN',status:'READY',width:1080,height:1350,version:1,isActive:true,configuration:{compatibleFormats:['INSTAGRAM_POST','FACEBOOK_POST','EDITORIAL_GRAPHIC'],brandLocked:true,managedBy:'SYSTEM'}}});
   }
 }
 
