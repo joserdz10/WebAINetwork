@@ -1,18 +1,23 @@
 {
-  "name": "ai-media-network-web",
-  "version": "0.2.0",
+  "name": "ai-media-network",
+  "version": "1.0.0",
   "private": true,
-  "description": "AI Media Network Control Center with PostgreSQL, Prisma and REST API",
+  "description": "AI Media Network - plataforma integral de inteligencia editorial, generación y distribución",
   "scripts": {
     "build": "prisma generate --schema=packages/database/prisma/schema.prisma",
     "start": "node server.js",
+    "dev": "node --watch server.js",
     "db:generate": "prisma generate --schema=packages/database/prisma/schema.prisma",
     "db:push": "prisma db push --schema=packages/database/prisma/schema.prisma",
-    "db:seed": "node packages/database/prisma/seed.js"
+    "db:seed": "node packages/database/prisma/seed.js",
+    "check": "node --check server.js && node --check services/discovery.js && node --check services/ai.js && node --check services/story-intelligence.js && node --check services/content.js && node --check services/publication.js && node --check public/app.js"
   },
   "dependencies": {
     "@prisma/client": "6.16.2",
+    "cheerio": "1.1.2",
     "express": "5.1.0",
+    "rss-parser": "3.13.0",
     "prisma": "6.16.2"
-  }
+  },
+  "engines": { "node": ">=20" }
 }

@@ -264,6 +264,7 @@ model Source {
   stateBrain     StateBrain   @relation(fields: [stateBrainId], references: [id], onDelete: Cascade)
   storyLinks     StorySource[]
   runItems       DiscoveryRunItem[]
+  candidates     DiscoveryCandidate[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -449,6 +450,7 @@ model DiscoveryRun {
   errorMessage      String?
   stateBrain        StateBrain    @relation(fields: [stateBrainId], references: [id], onDelete: Cascade)
   items             DiscoveryRunItem[]
+  candidates        DiscoveryCandidate[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -474,4 +476,94 @@ model DiscoveryRunItem {
   createdAt      DateTime     @default(now())
 
   @@index([discoveryRunId, decision])
+}
+
+
+model DiscoveryCandidate {
+  id             String       @id @default(cuid())
+  discoveryRunId String
+  sourceId       String?
+  storyId        String?
+  url            String
+  canonicalUrl   String?
+  title          String
+  excerpt        String?
+  publishedAt    DateTime?
+  relevanceScore Float        @default(0)
+  duplicateKey   String?
+  status         String       @default("PENDING")
+  decisionReason String?
+  metadata       Json?
+  discoveryRun   DiscoveryRun @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
+  source         Source?      @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  story          Story?       @relation(fields: [storyId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([discoveryRunId, status, relevanceScore])
+  @@index([sourceId, publishedAt])
+  @@index([duplicateKey])
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model ActivityEvent {
+  id          String   @id @default(cuid())
+  type        String
+  scope       String?
+  entityType  String?
+  entityId    String?
+  title       String
+  detail      String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type, scope])
+}
+
+model SystemError {
+  id          String   @id @default(cuid())
+  code        String
+  module      String
+  message     String
+  detail      String?
+  entityType  String?
+  entityId    String?
+  resolved    Boolean  @default(false)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  @@index([resolved, createdAt])
+  @@index([module, code])
+}
+
+model JobRecord {
+  id          String    @id @default(cuid())
+  type        String
+  status      JobStatus @default(QUEUED)
+  payload     Json?
+  result      Json?
+  error       String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([type, createdAt])
+}
+
+model AppSetting {
+  key         String   @id
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
 }

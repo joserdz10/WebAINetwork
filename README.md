@@ -1,43 +1,50 @@
-# AI Media Network Web v0.2.0
+# AI Media Network v1.0.0
 
-Primera versión del Control Center con persistencia real.
+Plataforma web integral para operar una red de medios digitales con inteligencia editorial, descubrimiento de historias, generación multiformato y distribución.
 
-## Incluye
+## Qué incluye
 
-- Interfaz web completa en español.
-- API REST integrada en el mismo servicio.
-- PostgreSQL mediante Prisma.
-- Modelo de datos para Country, StateBrain, MediaIdentity, MediaDNA, Topic, Profile, Watch, Source, Story, ContentPiece, Publication y DiscoveryRun.
-- Datos semilla para México, Nuevo León, Hidalgo, Colima y las identidades iniciales.
-- Dashboard e identidades conectados a la API cuando `DATABASE_URL` está configurada.
-- Modo demostración automático si todavía no existe PostgreSQL.
+- Centro de Control nacional y por estado.
+- 32 Cerebros Estatales preparados desde el modelo de datos.
+- Identidades editoriales con ADN editorial.
+- Temas, Perfiles, Monitoreos y Fuentes configurables.
+- Descubrimiento real desde páginas web/RSS.
+- Deduplicación y puntuación de relevancia.
+- Bandeja de candidatos y promoción manual a Historia.
+- Expediente de Historia con fuentes, resumen, contexto, datos clave, actores y riesgos editoriales.
+- Story Intelligence con IA cuando `OPENAI_API_KEY` está configurada; fallback conservador cuando no lo está.
+- Estudio de contenido para Facebook, Instagram, Stories, Reels, X, TikTok, artículo y gráfico editorial.
+- Generación de imagen bajo demanda cuando está configurada la API de IA.
+- Aprobación de piezas.
+- Exportación a Google Drive.
+- Publicación directa en Facebook e Instagram cuando Meta está configurado.
+- Distribución a Telegram.
+- Programación de publicaciones.
+- Corridas automáticas opcionales de Descubrimiento.
+- Historial de actividad y errores.
+- API REST.
+- PostgreSQL + Prisma.
 
-## Desarrollo local
+## Arranque en Railway
 
-```bash
-npm install
-npm run build
-npm start
-```
+1. Sube el contenido de esta carpeta a la raíz de tu repositorio GitHub.
+2. Railway desplegará el servicio Node.js.
+3. Agrega PostgreSQL al mismo proyecto.
+4. Configura `DATABASE_URL` como referencia a PostgreSQL.
+5. Railway ejecutará `npm run build` y `npm start`.
+6. El servidor ejecuta `prisma db push` al iniciar, salvo que `AUTO_DB_PUSH=false`.
+7. La semilla inicial se crea solo cuando no existe ningún país, salvo que `SEED_ON_EMPTY=false`.
 
-Con PostgreSQL:
+Consulta `docs/RAILWAY_V1.md` para las variables.
 
-```bash
-export DATABASE_URL="postgresql://..."
-npm run db:push
-npm run db:seed
-npm start
-```
+## Flujo operativo
 
-## Railway
+Fuentes → Descubrimiento → Candidatos → Historia → Análisis → Estudio de contenido → Aprobación → Publicación.
 
-1. Sustituye en tu repositorio el contenido de la versión anterior por esta versión.
-2. Commit y Push a `main`.
-3. En el mismo proyecto de Railway agrega un servicio PostgreSQL.
-4. En el servicio `WebAINetwork`, crea una variable `DATABASE_URL` usando la referencia del PostgreSQL de Railway.
-5. Redeploy.
-6. Abre `/api/health` en tu dominio para confirmar `databaseReady: true`.
+## Seguridad de secretos
 
-El servidor ejecuta `prisma db push` al arrancar cuando detecta `DATABASE_URL` y carga datos semilla solo si la base está vacía.
+Las credenciales no se almacenan en PostgreSQL ni en la interfaz. Deben vivir en Variables de Railway. `SocialAccount.credentialsRef` queda reservado para una futura bóveda de secretos.
 
-Consulta `docs/RAILWAY_V020.md` y `docs/API_V020.md`.
+## Nota sobre canales
+
+Facebook, Instagram y Telegram tienen adaptadores de publicación incluidos. X y TikTok están modelados como canales y formatos de contenido, pero la publicación directa requiere registrar y configurar sus APIs/OAuth correspondientes antes de activarlos.
