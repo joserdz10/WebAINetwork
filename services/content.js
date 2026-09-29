@@ -1,4 +1,5 @@
 const { callAI, generateImage } = require('./ai');
+const { selectTemplate, renderTemplate } = require('./template-engine');
 
 const FORMAT_RULES={
   FACEBOOK_POST:'Post de Facebook: titular claro, copy informativo de 2 a 5 párrafos cortos y cierre sin clickbait.',
@@ -53,28 +54,36 @@ async function generatePieces(prisma,args){
 }
 
 async function generatePieceImage(prisma,id){
-  const piece=await prisma.contentPiece.findUnique({where:{id},include:{story:true,mediaIdentity:{include:{mediaDNA:true,visualDNA:true}}}});
+  const piece=await prisma.contentPiece.findUnique({where:{id},include:{story:{include:{sources:{include:{source:true}},topics:{include:{topic:true}}}},mediaIdentity:{include:{mediaDNA:true,visualDNA:true,templates:true}}}});
   if(!piece) throw new Error('CONTENT_PIECE_NOT_FOUND');
+  const template=selectTemplate(piece.mediaIdentity,piece.type,piece.mediaIdentity.templates||[]);
   const v=piece.mediaIdentity.visualDNA||{};
   const format=(v.formatRules&&v.formatRules[piece.type])||{};
-  const ratio=format.ratio||'1:1';
-  const size=ratio==='16:9'?'1536x1024':(ratio==='1:1'?'1024x1024':'1024x1536');
-  const basePrompt=piece.generationPrompt||`Imagen editorial periodística sobre ${piece.story.title}.`;
-  const visualPrompt=[
-    `IDENTIDAD VISUAL: ${piece.mediaIdentity.name}.`,
-    `FORMATO: ${piece.type}; relación objetivo ${ratio}; ${format.composition||''}.`,
-    `PALETA: ${JSON.stringify(v.palette||{})}.`,
-    `TIPOGRAFÍA/ESPACIO DE TEXTO: ${JSON.stringify(v.typography||{})}.`,
-    `COMPOSICIÓN: ${v.layoutStyle||'editorial periodística clara'}.`,
-    `FOTOGRAFÍA: ${v.photoTreatment||'documental y factual'}.`,
-    `OVERLAYS: ${v.overlayStyle||'sobrios y consistentes'}.`,
-    `MARCA: ${v.logoPlacement||'reservar área segura; no inventar logotipo'}.`,
-    `REGLAS DE IDENTIDAD: ${v.promptInstructions||'mantener consistencia visual de la identidad'}.`,
-    `CONTENIDO: ${basePrompt}`,
-    'No inventar texto, logotipos, cifras, uniformes, personas o símbolos no confirmados. Si hay texto en la composición, dejar espacio limpio para que la plataforma lo aplique después.'
+  const ratio=template?`${template.width}:${template.height}`:(format.ratio||'1:1');
+  const size=template?'1536x1024':(ratio==='16:9'?'1536x1024':(ratio==='1:1'?'1024x1024':'1024x1536'));
+  const photoPrompt=[
+    `Fotografía periodística documental para una noticia titulada: ${piece.story.title}.`,
+    `Contexto: ${piece.story.summary||''}`,
+    'Generar SOLO la fotografía principal de la noticia, sin diseño editorial.',
+    'NO agregar titulares, textos, logotipos, marcos, cintillos, marcas de agua ni elementos de interfaz.',
+    'Aspecto fotográfico realista y periodístico. No representar como hecho algo no confirmado.',
+    `La fotografía será colocada posteriormente dentro de la plantilla oficial ${template?.code||piece.mediaIdentity.name}.`
   ].join('\n');
-  const imageUrl=await generateImage(visualPrompt,{size});
-  if(!imageUrl) throw new Error('IMAGE_AI_NOT_CONFIGURED');
-  return prisma.contentPiece.update({where:{id},data:{imageUrl}});
+  const sourcePhoto=await generateImage(photoPrompt,{size});
+  if(!sourcePhoto) throw new Error('IMAGE_AI_NOT_CONFIGURED');
+  let imageUrl=sourcePhoto, templateCode=null;
+  if(template){
+    const rendered=await renderTemplate(template,{
+      photo:sourcePhoto,
+      headline:piece.headline||piece.story.title,
+      category:piece.story.topics?.[0]?.topic?.name||'ACTUALIDAD',
+      summary:piece.story.summary||piece.copy||'',
+      source:piece.story.sources?.[0]?.source?.name||'AI Media Network'
+    });
+    imageUrl=`data:image/png;base64,${rendered.toString('base64')}`;
+    templateCode=template.code;
+  }
+  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.0',templateCode,generatedAt:new Date().toISOString()};
+  return prisma.contentPiece.update({where:{id},data:{imageUrl,metadata}});
 }
 module.exports={generatePiece,generatePieces,generatePieceImage,FORMAT_RULES};

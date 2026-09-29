@@ -167,6 +167,7 @@ model MediaIdentity {
   stateBrain      StateBrain           @relation(fields: [stateBrainId], references: [id], onDelete: Cascade)
   mediaDNA        MediaDNA?
   visualDNA       VisualDNA?
+  templates       MediaTemplate[]
   contentPieces   ContentPiece[]
   socialAccounts  SocialAccount[]
   createdAt       DateTime             @default(now())
@@ -210,6 +211,26 @@ model VisualDNA {
   mediaIdentity       MediaIdentity @relation(fields: [mediaIdentityId], references: [id], onDelete: Cascade)
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
+}
+
+model MediaTemplate {
+  id               String        @id @default(cuid())
+  mediaIdentityId  String
+  code             String        @unique
+  name             String
+  format           String
+  renderer         String
+  width            Int
+  height           Int
+  version          Int           @default(1)
+  isActive         Boolean       @default(true)
+  referenceImageUrl String?
+  configuration    Json?
+  mediaIdentity    MediaIdentity @relation(fields: [mediaIdentityId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([mediaIdentityId, format, isActive])
 }
 
 model Topic {

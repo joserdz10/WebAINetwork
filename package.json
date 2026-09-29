@@ -1,6 +1,6 @@
 {
   "name": "ai-media-network",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "AI Media Network - plataforma integral de inteligencia editorial, generación y distribución",
   "scripts": {
@@ -17,7 +17,10 @@
     "cheerio": "1.1.2",
     "express": "5.1.0",
     "rss-parser": "3.13.0",
-    "prisma": "6.16.2"
+    "prisma": "6.16.2",
+    "sharp": "0.34.4"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

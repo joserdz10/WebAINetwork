@@ -28,10 +28,10 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.1.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.2.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.use('/api',dbGuard);
 
-app.get('/api/bootstrap',async(req,res)=>{try{const state=req.query.state||'NL';const [dashboard,identities,topics,profiles,watches,sources,activity]=await Promise.all([getDashboard(state),prisma.mediaIdentity.findMany({where:stateWhere(state),include:{mediaDNA:true,visualDNA:true,socialAccounts:true,stateBrain:true},orderBy:{name:'asc'}}),prisma.topic.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:[{priority:'desc'},{name:'asc'}]}),prisma.profile.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:{name:'asc'}}),prisma.watch.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{priority:'desc'}]}),prisma.source.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{name:'asc'}]}),prisma.activityEvent.findMany({orderBy:{createdAt:'desc'},take:20})]);res.json({ok:true,data:{dashboard,identities,topics,profiles,watches,sources,activity}})}catch(e){fail(res,e)}});
+app.get('/api/bootstrap',async(req,res)=>{try{const state=req.query.state||'NL';const [dashboard,identities,topics,profiles,watches,sources,activity]=await Promise.all([getDashboard(state),prisma.mediaIdentity.findMany({where:stateWhere(state),include:{mediaDNA:true,visualDNA:true,templates:true,socialAccounts:true,stateBrain:true},orderBy:{name:'asc'}}),prisma.topic.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:[{priority:'desc'},{name:'asc'}]}),prisma.profile.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:{name:'asc'}}),prisma.watch.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{priority:'desc'}]}),prisma.source.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{name:'asc'}]}),prisma.activityEvent.findMany({orderBy:{createdAt:'desc'},take:20})]);res.json({ok:true,data:{dashboard,identities,topics,profiles,watches,sources,activity}})}catch(e){fail(res,e)}});
 
 async function getDashboard(stateCode='NL'){
   const state=await prisma.stateBrain.findFirst({where:{stateCode}});if(!state)throw new Error('STATE_NOT_FOUND');const since=new Date(Date.now()-86400000);
@@ -45,11 +45,13 @@ app.get('/api/dashboard',async(req,res)=>{try{res.json({ok:true,...await getDash
 app.get('/api/states',async(_req,res)=>{try{res.json({ok:true,data:await prisma.stateBrain.findMany({include:{_count:{select:{identities:true,sources:true,topics:true,profiles:true,stories:true}}},orderBy:{name:'asc'}})})}catch(e){fail(res,e)}});
 app.patch('/api/states/:id',async(req,res)=>{try{res.json({ok:true,data:await prisma.stateBrain.update({where:{id:req.params.id},data:{status:req.body.status,description:req.body.description,configuration:req.body.configuration}})})}catch(e){fail(res,e)}});
 
-app.get('/api/identities',async(req,res)=>{try{res.json({ok:true,data:await prisma.mediaIdentity.findMany({where:stateWhere(req.query.state),include:{stateBrain:true,mediaDNA:true,visualDNA:true,socialAccounts:true},orderBy:{name:'asc'}})})}catch(e){fail(res,e)}});
+app.get('/api/identities',async(req,res)=>{try{res.json({ok:true,data:await prisma.mediaIdentity.findMany({where:stateWhere(req.query.state),include:{stateBrain:true,mediaDNA:true,visualDNA:true,templates:true,socialAccounts:true},orderBy:{name:'asc'}})})}catch(e){fail(res,e)}});
 app.post('/api/identities',async(req,res)=>{try{const state=await prisma.stateBrain.findFirst({where:{stateCode:req.body.stateCode||'NL'}});if(!state)return fail(res,new Error('STATE_NOT_FOUND'),404);const d=req.body;const row=await prisma.mediaIdentity.create({data:{stateBrainId:state.id,slug:d.slug,name:d.name,code:d.code||null,status:d.status||'DRAFT',description:d.description||null}});res.status(201).json({ok:true,data:row})}catch(e){fail(res,e)}});
 app.patch('/api/identities/:id',async(req,res)=>{try{const {name,status,description,logoUrl,websiteUrl}=req.body;res.json({ok:true,data:await prisma.mediaIdentity.update({where:{id:req.params.id},data:{name,status,description,logoUrl,websiteUrl}})})}catch(e){fail(res,e)}});
 app.put('/api/identities/:id/dna',async(req,res)=>{try{const d=req.body;res.json({ok:true,data:await prisma.mediaDNA.upsert({where:{mediaIdentityId:req.params.id},update:d,create:{mediaIdentityId:req.params.id,...d}})})}catch(e){fail(res,e)}});
 app.put('/api/identities/:id/visual-dna',async(req,res)=>{try{const d=req.body;res.json({ok:true,data:await prisma.visualDNA.upsert({where:{mediaIdentityId:req.params.id},update:d,create:{mediaIdentityId:req.params.id,...d}})})}catch(e){fail(res,e)}});
+app.get('/api/identities/:id/templates',async(req,res)=>{try{res.json({ok:true,data:await prisma.mediaTemplate.findMany({where:{mediaIdentityId:req.params.id},orderBy:[{isActive:'desc'},{name:'asc'}]})})}catch(e){fail(res,e)}});
+app.patch('/api/templates/:id',async(req,res)=>{try{const b=req.body;res.json({ok:true,data:await prisma.mediaTemplate.update({where:{id:req.params.id},data:{name:b.name,format:b.format,isActive:b.isActive,referenceImageUrl:b.referenceImageUrl,configuration:b.configuration}})})}catch(e){fail(res,e)}});
 
 function crudRoutes(name,model,createData,updateData){
   app.get(`/api/${name}`,async(req,res)=>{try{res.json({ok:true,data:await prisma[model].findMany({where:stateWhere(req.query.state),orderBy:{createdAt:'desc'}})})}catch(e){fail(res,e)}});
@@ -103,7 +105,7 @@ app.put('/api/settings/:key',async(req,res)=>{try{res.json({ok:true,data:await p
 app.use(express.static(publicDir));
 app.use((_req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 prepareDatabase().finally(()=>{
-  app.listen(port,()=>console.log(`AI Media Network v1.1.0 en puerto ${port}`));
+  app.listen(port,()=>console.log(`AI Media Network v1.2.0 en puerto ${port}`));
   setInterval(()=>{if(databaseReady)processScheduled(prisma).catch(e=>console.error('Scheduled worker',e.message))},60000);
   const every=Number(process.env.AUTO_DISCOVERY_INTERVAL_MINUTES||0);
   if(every>0)setInterval(()=>{if(databaseReady)runDiscovery(prisma,process.env.AUTO_DISCOVERY_STATE||'NL',{hours:Number(process.env.AUTO_DISCOVERY_HOURS||6)}).catch(e=>console.error('Auto discovery',e.message))},every*60000);

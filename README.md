@@ -65,3 +65,11 @@ Facebook, Instagram y Telegram tienen adaptadores de publicación incluidos. X y
 
 ## v1.1.0 — Visual DNA
 Cada identidad ahora separa ADN Editorial y ADN Visual. El Visual Engine utiliza paleta, tipografía, composición, tratamiento fotográfico, overlays, ubicación de marca y reglas por formato para generar piezas coherentes con cada medio. Norte En Alerta incluye una configuración visual inicial editable desde Identidades → ADN editorial + visual.
+
+
+## v1.2.0 — Template Library
+- Añade plantillas gráficas bloqueadas por identidad.
+- Registra `NEA_FEED_4X5_V1` para Norte En Alerta (1080×1350).
+- La IA genera únicamente la fotografía fuente; el Template Engine aplica marca, titular, categoría, bajada y fuente.
+- Añade el modelo `MediaTemplate` y la vista Plantillas dentro de Identidades.
+- Norte En Alerta deja de depender de diseño generativo libre para feed 4:5.
