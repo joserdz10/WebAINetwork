@@ -83,7 +83,7 @@ async function generatePieceImage(prisma,id){
     imageUrl=`data:image/png;base64,${rendered.toString('base64')}`;
     templateCode=template.code;
   }
-  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.5.0',templateCode,generatedAt:new Date().toISOString()};
+  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.0',templateCode,generatedAt:new Date().toISOString()};
   return prisma.contentPiece.update({where:{id},data:{imageUrl,metadata}});
 }
 module.exports={generatePiece,generatePieces,generatePieceImage,FORMAT_RULES};

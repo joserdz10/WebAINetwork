@@ -60,3 +60,8 @@ Abre:
 ```
 
 Debe reportar `databaseReady: true` y el estado de IA, Meta, Drive y Telegram.
+
+
+## Social Connections Manager
+
+Configura una sola vez `SOCIAL_CREDENTIALS_KEY` con un secreto largo y aleatorio. Las páginas de Facebook e Instagram se administran después desde **Sistema -> Integraciones**. Si Railway no proporciona `RAILWAY_PUBLIC_DOMAIN`, define también `PUBLIC_BASE_URL` con el dominio público de la aplicación.

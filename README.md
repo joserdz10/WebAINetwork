@@ -1,4 +1,4 @@
-# AI Media Network v1.5.0
+# AI Media Network v1.6.0
 
 ## Template Library universal
 
@@ -92,3 +92,8 @@ Cada identidad ahora separa ADN Editorial y ADN Visual. El Visual Engine utiliza
 - La IA genera únicamente la fotografía fuente; el Template Engine aplica marca, titular, categoría, bajada y fuente.
 - Añade el modelo `MediaTemplate` y la vista Plantillas dentro de Identidades.
 - Norte En Alerta deja de depender de diseño generativo libre para feed 4:5.
+
+
+## Social Connections Manager v1.6.0
+
+Facebook e Instagram se conectan desde **Integraciones**. Los tokens de página se cifran con AES-256-GCM antes de guardarse en PostgreSQL. Configura una sola vez `SOCIAL_CREDENTIALS_KEY` en Railway; después las páginas se detectan, asignan a una identidad, validan y desconectan desde la propia plataforma. El token temporal usado para descubrir páginas no se conserva.

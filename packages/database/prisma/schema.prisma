@@ -454,9 +454,16 @@ model SocialAccount {
   username         String?
   isActive         Boolean         @default(true)
   connectionStatus String          @default("PENDING")
-  credentialsRef   String?
-  configuration    Json?
-  mediaIdentity    MediaIdentity   @relation(fields: [mediaIdentityId], references: [id], onDelete: Cascade)
+  credentialsRef      String?
+  credentialCiphertext String?
+  credentialIv         String?
+  credentialTag        String?
+  tokenExpiresAt       DateTime?
+  permissions          Json?
+  lastCheckedAt        DateTime?
+  lastError            String?
+  configuration        Json?
+  mediaIdentity        MediaIdentity   @relation(fields: [mediaIdentityId], references: [id], onDelete: Cascade)
   publications     Publication[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
