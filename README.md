@@ -1,4 +1,4 @@
-# AI Media Network v1.4.0
+# AI Media Network v1.5.0
 
 ## Template Library universal
 
