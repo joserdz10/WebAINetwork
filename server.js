@@ -8,7 +8,8 @@ const {analyzeStory}=require('./services/story-intelligence');
 const {generatePieces,generatePieceImage}=require('./services/content');
 const {publishPiece,savePieceToDrive,schedulePiece,processScheduled}=require('./services/publication');
 const {handleTelegramUpdate}=require('./services/telegram-operator');
-const {inspectPsd,statusFor,safeTemplate}=require('./services/template-library');
+const {inspectPsd,statusFor,safeTemplate,diagnosticsFor}=require('./services/template-library');
+const {renderTemplatePreview}=require('./services/template-engine');
 
 const app=express(), prisma=new PrismaClient();
 const port=process.env.PORT||3000, publicDir=path.join(__dirname,'public');
@@ -30,7 +31,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.3.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.4.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.use('/api',dbGuard);
 
 app.get('/api/bootstrap',async(req,res)=>{try{const state=req.query.state||'NL';const [dashboard,identities,topics,profiles,watches,sources,activity]=await Promise.all([getDashboard(state),prisma.mediaIdentity.findMany({where:stateWhere(state),include:{mediaDNA:true,visualDNA:true,templates:{select:templateSelect},socialAccounts:true,stateBrain:true},orderBy:{name:'asc'}}),prisma.topic.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:[{priority:'desc'},{name:'asc'}]}),prisma.profile.findMany({where:stateWhere(state),include:{_count:{select:{storyLinks:true}}},orderBy:{name:'asc'}}),prisma.watch.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{priority:'desc'}]}),prisma.source.findMany({where:stateWhere(state),orderBy:[{isActive:'desc'},{name:'asc'}]}),prisma.activityEvent.findMany({orderBy:{createdAt:'desc'},take:20})]);res.json({ok:true,data:{dashboard,identities,topics,profiles,watches,sources,activity}})}catch(e){fail(res,e)}});
@@ -59,6 +60,8 @@ app.post('/api/templates/:id/activate',async(req,res)=>{try{const t=await prisma
 app.patch('/api/templates/:id',async(req,res)=>{try{const b=req.body;res.json({ok:true,data:safeTemplate(await prisma.mediaTemplate.update({where:{id:req.params.id},data:{name:b.name,format:b.format,isActive:b.isActive,referenceImageUrl:b.referenceImageUrl,configuration:b.configuration}}))})}catch(e){fail(res,e)}});
 app.get('/api/templates/:id/master',async(req,res)=>{try{const t=await prisma.mediaTemplate.findUnique({where:{id:req.params.id},select:{masterFileData:true,masterFileName:true,masterMimeType:true}});if(!t?.masterFileData)return res.status(404).send('Archivo maestro no disponible');res.setHeader('Content-Type',t.masterMimeType||'application/octet-stream');res.setHeader('Content-Disposition',`attachment; filename=\"${String(t.masterFileName||'template.psd').replace(/\"/g,'')}\"`);res.end(Buffer.from(t.masterFileData))}catch(e){fail(res,e)}});
 app.get('/api/templates/:id/base-image',async(req,res)=>{try{const t=await prisma.mediaTemplate.findUnique({where:{id:req.params.id},select:{baseImageData:true,baseImageMimeType:true}});if(!t?.baseImageData)return res.status(404).send('Base renderizable no disponible');res.setHeader('Content-Type',t.baseImageMimeType||'image/png');res.setHeader('Cache-Control','private,max-age=3600');res.end(Buffer.from(t.baseImageData))}catch(e){fail(res,e)}});
+app.get('/api/templates/:id/preview',async(req,res)=>{try{const t=await prisma.mediaTemplate.findUnique({where:{id:req.params.id},include:{mediaIdentity:true}});if(!t)return res.status(404).send('Plantilla no encontrada');const diagnostics=diagnosticsFor(t);if(!diagnostics.canPreview)return res.status(409).json({ok:false,error:'TEMPLATE_NOT_PREVIEWABLE',message:'La plantilla necesita base renderizable y mapeo de PHOTO/HEADLINE antes de generar una vista previa.',diagnostics});const buffer=await renderTemplatePreview(t);res.setHeader('Content-Type','image/png');res.setHeader('Cache-Control','no-store');res.setHeader('Content-Disposition',`inline; filename="preview-${String(t.code||t.id).replace(/[^A-Za-z0-9_-]/g,'_')}.png"`);res.end(buffer)}catch(e){fail(res,e)}});
+app.get('/api/templates/:id/diagnostics',async(req,res)=>{try{const t=await prisma.mediaTemplate.findUnique({where:{id:req.params.id},select:{...templateSelect,baseImageData:true,masterFileData:true}});if(!t)return fail(res,new Error('TEMPLATE_NOT_FOUND'),404);res.json({ok:true,data:diagnosticsFor(t)})}catch(e){fail(res,e)}});
 
 function crudRoutes(name,model,createData,updateData){
   app.get(`/api/${name}`,async(req,res)=>{try{res.json({ok:true,data:await prisma[model].findMany({where:stateWhere(req.query.state),orderBy:{createdAt:'desc'}})})}catch(e){fail(res,e)}});
@@ -112,7 +115,7 @@ app.put('/api/settings/:key',async(req,res)=>{try{res.json({ok:true,data:await p
 app.use(express.static(publicDir));
 app.use((_req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 prepareDatabase().finally(()=>{
-  app.listen(port,()=>console.log(`AI Media Network v1.3.0 en puerto ${port}`));
+  app.listen(port,()=>console.log(`AI Media Network v1.4.0 en puerto ${port}`));
   setInterval(()=>{if(databaseReady)processScheduled(prisma).catch(e=>console.error('Scheduled worker',e.message))},60000);
   const every=Number(process.env.AUTO_DISCOVERY_INTERVAL_MINUTES||0);
   if(every>0)setInterval(()=>{if(databaseReady)runDiscovery(prisma,process.env.AUTO_DISCOVERY_STATE||'NL',{hours:Number(process.env.AUTO_DISCOVERY_HOURS||6)}).catch(e=>console.error('Auto discovery',e.message))},every*60000);

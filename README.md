@@ -1,3 +1,9 @@
+# AI Media Network v1.4.0
+
+## Template Library universal
+
+Todas las identidades actuales y futuras pueden administrar plantillas maestras PSD, base renderizable, mapeo de campos, vista previa de prueba, validación y activación. Norte En Alerta conserva NEA_FEED_4X5_V1 como plantilla canónica.
+
 # AI Media Network v1.3.0
 
 Plataforma web integral para operar una red de medios digitales con inteligencia editorial, descubrimiento de historias, generación multiformato y distribución.

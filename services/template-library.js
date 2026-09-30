@@ -1,4 +1,5 @@
 const DYNAMIC_FIELDS=['PHOTO','CATEGORY','HEADLINE','SUMMARY','SOURCE'];
+const REQUIRED_FIELDS=['PHOTO','HEADLINE'];
 function u16(b,o){return b.readUInt16BE(o)} function i16(b,o){return b.readInt16BE(o)} function u32(b,o){return b.readUInt32BE(o)} function i32(b,o){return b.readInt32BE(o)}
 function normalizeField(name=''){
   const n=name.toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÚÑ]+/g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -20,6 +21,26 @@ function inspectPsd(buffer){
   }catch(e){/* keep dimensions even if layer metadata is unusual */}
   return{width,height,layers,layerMap:autoLayerMap(layers),dynamicFields:DYNAMIC_FIELDS};
 }
-function statusFor({baseImageData,layerMap}){if(!baseImageData)return'NEEDS_BASE_IMAGE';if(!layerMap?.PHOTO||!layerMap?.HEADLINE)return'NEEDS_MAPPING';return'READY'}
-function safeTemplate(t){return{...t,masterFileData:undefined,baseImageData:undefined,hasMasterFile:Boolean(t.masterFileData),hasBaseImage:Boolean(t.baseImageData)}}
-module.exports={inspectPsd,statusFor,safeTemplate,DYNAMIC_FIELDS};
+function statusFor({baseImageData,layerMap,sourceType='PSD'}){
+  if(sourceType==='BUILT_IN')return'READY';
+  if(!baseImageData)return'NEEDS_BASE_IMAGE';
+  if(!layerMap?.PHOTO||!layerMap?.HEADLINE)return'NEEDS_MAPPING';
+  return'READY';
+}
+function diagnosticsFor(t){
+  const builtIn=t.sourceType==='BUILT_IN';
+  const map=t.layerMap||{};
+  const mappedFields=builtIn?[...DYNAMIC_FIELDS]:DYNAMIC_FIELDS.filter(f=>Boolean(map[f]));
+  const missingRequired=builtIn?[]:REQUIRED_FIELDS.filter(f=>!map[f]);
+  const optionalMissing=builtIn?[]:DYNAMIC_FIELDS.filter(f=>!REQUIRED_FIELDS.includes(f)&&!map[f]);
+  const hasBase=Boolean(t.baseImageData||t.hasBaseImage||builtIn);
+  const canPreview=builtIn||(hasBase&&missingRequired.length===0);
+  const canActivate=String(t.status||'')==='READY'&&canPreview;
+  return{mappedFields,missingRequired,optionalMissing,hasBase,canPreview,canActivate,requiredFields:REQUIRED_FIELDS,dynamicFields:DYNAMIC_FIELDS};
+}
+function safeTemplate(t){
+  const out={...t,masterFileData:undefined,baseImageData:undefined,hasMasterFile:Boolean(t.masterFileData||t.hasMasterFile),hasBaseImage:Boolean(t.baseImageData||t.hasBaseImage)};
+  out.diagnostics=diagnosticsFor({...t,...out});
+  return out;
+}
+module.exports={inspectPsd,statusFor,safeTemplate,diagnosticsFor,DYNAMIC_FIELDS,REQUIRED_FIELDS};

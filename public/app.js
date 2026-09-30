@@ -94,13 +94,53 @@ async function resolveError(id){try{await api(`/api/errors/${id}/resolve`,{metho
 function modal(title,body){document.querySelector('#modal-title').textContent=title;document.querySelector('#modal-body').innerHTML=body;document.querySelector('#modal').showModal()}
 async function newIdentity(){modal('Nueva identidad',`<div class="form-grid"><div class="field"><label>Nombre</label><input id="i-name"></div><div class="field"><label>Código</label><input id="i-code"></div><div class="field"><label>Slug</label><input id="i-slug"></div><div class="field"><label>Descripción</label><input id="i-desc"></div></div><button class="cta" onclick="saveIdentity()">Crear identidad</button>`)}
 async function saveIdentity(){try{await api('/api/identities',{method:'POST',body:JSON.stringify({stateCode:state.workspace,name:val('i-name'),code:val('i-code'),slug:val('i-slug'),description:val('i-desc'),status:'DRAFT'})});document.querySelector('#modal').close();flash('Identidad creada.');go('identities')}catch(e){flash(e.message,'err')}}
+function templateFieldChips(t){
+  const fields=['PHOTO','CATEGORY','HEADLINE','SUMMARY','SOURCE'];
+  const mapped=new Set(t.diagnostics?.mappedFields||[]);
+  return `<div class="template-fields">${fields.map(f=>`<span class="template-field ${mapped.has(f)?'ok':'missing'}">${mapped.has(f)?'✓':'—'} ${f}</span>`).join('')}</div>`
+}
+function templatePreviewBlock(t){
+  const can=Boolean(t.diagnostics?.canPreview);
+  const src=can?`/api/templates/${t.id}/preview?v=${encodeURIComponent(t.updatedAt||Date.now())}`:(t.hasBaseImage?`/api/templates/${t.id}/base-image`:'');
+  if(!src)return `<div class="template-preview template-preview-empty"><div><b>Sin vista previa todavía</b><span>Agrega una base PNG/JPG y mapea PHOTO + HEADLINE.</span></div></div>`;
+  return `<div class="template-preview"><img src="${src}" alt="Vista previa de ${esc(t.name)}" loading="lazy" onerror="this.closest('.template-preview').classList.add('preview-error')"><div class="template-preview-overlay"><span>${can?'VISTA PREVIA DE PRUEBA':'BASE RENDERIZABLE'}</span></div></div>`
+}
 async function showTemplates(id){
   try{
     const identity=state.identities.find(x=>x.id===id), rows=await api(`/api/identities/${id}/templates`);
-    const cards=rows.length?`<div class="stack">${rows.map(t=>`<div class="card"><div class="identity-head"><div><div class="eyebrow">${esc(t.code)}</div><h3>${esc(t.name)}</h3></div>${t.isActive?'<span class="badge">ACTIVA</span>':'<span class="badge warn">INACTIVA</span>'}</div><div class="mini">${esc(t.format)} · ${t.width}×${t.height} · ${esc(t.sourceType||'BUILT_IN')} · v${t.version}</div><div class="template-state"><span class="badge ${t.status==='READY'?'':'warn'}">${esc(t.status||'READY')}</span>${t.hasMasterFile?'<span class="channel on">PSD guardado</span>':''}${t.hasBaseImage?'<span class="channel on">Base renderizable</span>':''}</div><p class="muted" style="font-size:11px">${t.sourceType==='PSD'?'Archivo maestro administrado por la plataforma. El render usa la base y el mapeo de capas dinámicas.':'Plantilla canónica incorporada al sistema.'}</p><div class="button-row">${t.hasMasterFile?`<a class="cta secondary" href="/api/templates/${t.id}/master">Descargar PSD</a>`:''}${t.hasBaseImage?`<a class="cta secondary" target="_blank" href="/api/templates/${t.id}/base-image">Ver base</a>`:''}${t.sourceType==='PSD'?`<button class="cta secondary" onclick="editTemplateMapping('${t.id}','${id}')">Mapear campos</button>`:''}${t.status==='READY'&&!t.isActive?`<button class="cta" onclick="activateTemplate('${t.id}','${id}')">Activar</button>`:''}</div></div>`).join('')}</div>`:'<div class="empty">Esta identidad todavía no tiene plantillas registradas.</div>';
-    modal(`Plantillas · ${identity?.name||''}`,`<div class="template-upload"><div class="eyebrow">BIBLIOTECA DE PLANTILLAS</div><h3 style="margin:5px 0 8px">Subir plantilla maestra</h3><p class="muted mini">Acepta PSD para cualquier identidad. Para render automático agrega también una base PNG/JPG del mismo tamaño con PHOTO, HEADLINE, CATEGORY, SUMMARY y SOURCE ocultos. Si el PSD usa esos nombres de capa, el mapeo se detecta automáticamente.</p><div class="form-grid"><div class="field"><label>Nombre</label><input id="tpl-name" placeholder="Feed noticias 4:5"></div><div class="field"><label>Código</label><input id="tpl-code" placeholder="NEA_FEED_4X5_V2"></div><div class="field"><label>Formato</label><select id="tpl-format">${Object.entries(contentLabels).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Archivo maestro PSD</label><input id="tpl-master" type="file" accept=".psd,image/vnd.adobe.photoshop"></div><div class="field"><label>Base renderizable PNG/JPG</label><input id="tpl-base" type="file" accept="image/png,image/jpeg"></div></div><button class="cta" onclick="uploadTemplate('${id}')">Subir plantilla</button></div><div style="height:18px"></div>${cards}`);
+    const cards=rows.length?`<div class="template-library-grid">${rows.map(t=>{
+      const d=t.diagnostics||{};
+      const readiness=t.status==='READY'?(t.isActive?'Activa en producción':'Lista para activar'):(t.status==='NEEDS_BASE_IMAGE'?'Falta base renderizable':'Requiere mapeo');
+      return `<div class="card template-card">
+        ${templatePreviewBlock(t)}
+        <div class="template-card-body">
+          <div class="identity-head"><div><div class="eyebrow">${esc(t.code)}</div><h3>${esc(t.name)}</h3></div>${t.isActive?'<span class="badge">ACTIVA</span>':'<span class="badge warn">INACTIVA</span>'}</div>
+          <div class="mini">${esc(contentLabels[t.format]||t.format)} · ${t.width}×${t.height} · ${esc(t.sourceType||'BUILT_IN')} · v${t.version}</div>
+          <div class="template-state"><span class="badge ${t.status==='READY'?'':'warn'}">${esc(t.status||'READY')}</span><span class="template-readiness">${esc(readiness)}</span>${t.hasMasterFile?'<span class="channel on">PSD</span>':''}${t.hasBaseImage?'<span class="channel on">BASE</span>':''}</div>
+          ${templateFieldChips(t)}
+          ${d.optionalMissing?.length?`<div class="mini template-warning">Opcionales sin mapear: ${esc(d.optionalMissing.join(', '))}</div>`:''}
+          <div class="button-row template-actions">
+            ${d.canPreview?`<button type="button" class="cta" onclick="openTemplatePreview('${t.id}','${id}')">Vista previa</button>`:''}
+            ${t.hasMasterFile?`<a class="cta secondary" href="/api/templates/${t.id}/master">PSD</a>`:''}
+            ${t.hasBaseImage?`<a class="cta secondary" target="_blank" rel="noopener" href="/api/templates/${t.id}/base-image">Ver base</a>`:''}
+            ${t.sourceType==='PSD'?`<button type="button" class="cta secondary" onclick="editTemplateMapping('${t.id}','${id}')">Mapear campos</button>`:''}
+            ${d.canActivate&&!t.isActive?`<button type="button" class="cta" onclick="activateTemplate('${t.id}','${id}')">Activar</button>`:''}
+          </div>
+        </div>
+      </div>`
+    }).join('')}</div>`:'<div class="empty">Esta identidad todavía no tiene plantillas registradas.</div>';
+    modal(`Plantillas · ${identity?.name||''}`,`<div class="template-upload"><div class="eyebrow">BIBLIOTECA DE PLANTILLAS</div><h3 style="margin:5px 0 8px">Subir plantilla maestra</h3><p class="muted mini">Disponible para todas las identidades actuales y futuras. Sube el PSD original y una base PNG/JPG con los elementos fijos. El sistema detecta PHOTO, HEADLINE, CATEGORY, SUMMARY y SOURCE y permite validar la plantilla antes de activarla.</p><div class="form-grid"><div class="field"><label>Nombre</label><input id="tpl-name" placeholder="Feed noticias 4:5"></div><div class="field"><label>Código</label><input id="tpl-code" placeholder="MEDIO_FEED_4X5_V1"></div><div class="field"><label>Formato</label><select id="tpl-format">${Object.entries(contentLabels).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Archivo maestro PSD</label><input id="tpl-master" type="file" accept=".psd,image/vnd.adobe.photoshop"></div><div class="field"><label>Base renderizable PNG/JPG</label><input id="tpl-base" type="file" accept="image/png,image/jpeg"></div></div><button type="button" class="cta" onclick="uploadTemplate('${id}')">Subir plantilla</button></div><div style="height:18px"></div><div class="section-head"><div><h2>Plantillas registradas</h2><p>Previsualiza, valida, mapea y activa diseños sin tocar código.</p></div></div>${cards}`);
   }catch(e){flash(e.message,'err')}
 }
+async function openTemplatePreview(templateId,identityId){
+  try{
+    const rows=await api(`/api/identities/${identityId}/templates`), t=rows.find(x=>x.id===templateId);if(!t)throw new Error('Plantilla no encontrada');
+    const d=t.diagnostics||{};
+    if(!d.canPreview)throw new Error('La plantilla todavía no puede renderizar una vista previa.');
+    modal(`Vista previa · ${t.name}`,`<div class="template-full-preview"><img src="/api/templates/${t.id}/preview?v=${Date.now()}" alt="Vista previa de ${esc(t.name)}"><div class="template-preview-info"><div><div class="eyebrow">PRUEBA DE RENDER</div><h3>${esc(t.code)}</h3><p class="muted mini">Contenido de prueba no político. Esta vista usa el mismo Template Engine que las piezas reales.</p></div><div>${templateFieldChips(t)}</div></div><div class="button-row"><button type="button" class="cta secondary" onclick="showTemplates('${identityId}')">← Volver a plantillas</button>${t.sourceType==='PSD'?`<button type="button" class="cta secondary" onclick="editTemplateMapping('${t.id}','${identityId}')">Ajustar mapeo</button>`:''}${d.canActivate&&!t.isActive?`<button type="button" class="cta" onclick="activateTemplate('${t.id}','${identityId}')">Aprobar y activar</button>`:''}</div></div>`)
+  }catch(e){flash(e.message,'err')}
+}
+
 function fileBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||'').split(',')[1]||'');r.onerror=()=>reject(new Error('No pude leer el archivo'));r.readAsDataURL(file)})}
 async function uploadTemplate(identityId){
   try{
@@ -138,7 +178,7 @@ async function newChannel(){const ids=await api(`/api/identities?state=${state.w
 async function saveChannel(){try{await api('/api/channels',{method:'POST',body:JSON.stringify({mediaIdentityId:val('ch-id'),platform:val('ch-platform'),name:val('ch-name'),externalAccountId:val('ch-ext')||null,connectionStatus:val('ch-ext')?'CONNECTED':'PENDING'})});document.querySelector('#modal').close();flash('Canal guardado.');go('channels')}catch(e){flash(e.message,'err')}}
 function val(id){return document.getElementById(id)?.value||''}
 
-window.go=go;Object.assign(window,{runDiscovery,promoteCandidate,discardCandidate,analyzeStory,generateContent,approvePiece,imagePiece,drivePiece,publishDialog,publishNow,resolveError,newIdentity,saveIdentity,editDNA,showTemplates,uploadTemplate,editTemplateMapping,saveTemplateMapping,activateTemplate,showDnaTab,saveDNA,saveVisualDNA,newCatalog,saveCatalog,deleteCatalog,newChannel,saveChannel});
+window.go=go;Object.assign(window,{runDiscovery,promoteCandidate,discardCandidate,analyzeStory,generateContent,approvePiece,imagePiece,drivePiece,publishDialog,publishNow,resolveError,newIdentity,saveIdentity,editDNA,showTemplates,openTemplatePreview,uploadTemplate,editTemplateMapping,saveTemplateMapping,activateTemplate,showDnaTab,saveDNA,saveVisualDNA,newCatalog,saveCatalog,deleteCatalog,newChannel,saveChannel});
 
 document.querySelector('#workspace-select').onchange=e=>{state.workspace=e.target.value;state.bootstrap=null;go(state.page)};
 document.querySelector('#refresh-btn').onclick=()=>{state.bootstrap=null;go(state.page)};

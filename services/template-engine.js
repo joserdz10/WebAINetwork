@@ -67,6 +67,32 @@ async function renderGenericLayered(template,data){
   return sharp(base).composite(composites).png().toBuffer();
 }
 
+
+function previewPhotoDataUri(width=1200,height=700){
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#9fb6c2"/><stop offset="1" stop-color="#40545f"/></linearGradient></defs>
+    <rect width="100%" height="100%" fill="url(#g)"/>
+    <rect x="0" y="${Math.round(height*.62)}" width="100%" height="${Math.round(height*.38)}" fill="#263a42" opacity=".72"/>
+    <circle cx="${Math.round(width*.72)}" cy="${Math.round(height*.28)}" r="${Math.round(Math.min(width,height)*.12)}" fill="#e7edf0" opacity=".55"/>
+    <path d="M0 ${Math.round(height*.7)} L${Math.round(width*.18)} ${Math.round(height*.42)} L${Math.round(width*.33)} ${Math.round(height*.66)} L${Math.round(width*.5)} ${Math.round(height*.34)} L${Math.round(width*.7)} ${Math.round(height*.68)} L${width} ${Math.round(height*.46)} L${width} ${height} L0 ${height}Z" fill="#183239" opacity=".72"/>
+    <text x="${Math.round(width/2)}" y="${Math.round(height/2)}" text-anchor="middle" fill="#ffffff" font-family="Arial,Helvetica,sans-serif" font-size="${Math.max(28,Math.round(width*.035))}" font-weight="700">FOTO DE PRUEBA</text>
+    <text x="${Math.round(width/2)}" y="${Math.round(height/2+48)}" text-anchor="middle" fill="#ffffff" opacity=".85" font-family="Arial,Helvetica,sans-serif" font-size="${Math.max(16,Math.round(width*.018))}">Vista previa de plantilla</text>
+  </svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
+async function renderTemplatePreview(template,overrides={}){
+  const data={
+    photo:previewPhotoDataUri(Math.max(900,Number(template?.width||1080)),Math.max(600,Math.round(Number(template?.height||1350)*.52))),
+    headline:'Así se verá el titular principal de una noticia',
+    category:'ACTUALIDAD',
+    summary:'Esta es una bajada de prueba para validar tamaño, jerarquía y composición antes de activar la plantilla.',
+    source:'Fuente de prueba',
+    ...overrides
+  };
+  return renderTemplate(template,data);
+}
+
 function selectTemplate(identity,type,templates=[]){
  const active=templates.filter(t=>t.isActive!==false&&t.status!=='DISABLED');
  const exact=active.find(t=>t.format===type&&t.status==='READY');if(exact)return exact;
@@ -79,4 +105,4 @@ async function renderTemplate(template,data){
  if(template?.renderer==='GENERIC_LAYERED')return renderGenericLayered(template,data);
  throw new Error('TEMPLATE_RENDERER_NOT_SUPPORTED');
 }
-module.exports={selectTemplate,renderTemplate};
+module.exports={selectTemplate,renderTemplate,renderTemplatePreview};
