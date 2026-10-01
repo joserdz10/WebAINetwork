@@ -32,6 +32,16 @@ async function discoverMetaPages(accessToken){
   const missingPermissions=requiredPermissions.filter(x=>!permissions.granted.includes(x));
   return{user:me,permissions,requiredPermissions,missingPermissions,pages:(pages.data||[]).map(p=>({id:p.id,name:p.name,tasks:p.tasks||[],instagram:p.instagram_business_account||null,connectable:Boolean(p.access_token),ticket:p.access_token?encryptTicket({pageId:p.id,pageName:p.name,pageAccessToken:p.access_token,tasks:p.tasks||[],instagram:p.instagram_business_account||null,permissions}):null}))};
 }
+
+async function inspectPageAccessToken(accessToken){
+  if(!secretVaultConfigured())throw new Error('SOCIAL_CREDENTIALS_KEY_NOT_CONFIGURED');
+  if(!accessToken)throw new Error('META_ACCESS_TOKEN_REQUIRED');
+  const page=await graphGet('me',accessToken,{fields:'id,name,username,instagram_business_account{id,username,name,profile_picture_url}'});
+  if(!page?.id)throw new Error('META_PAGE_TOKEN_INVALID');
+  let permissions={granted:[],declined:[]};
+  try{const perm=await graphGet('me/permissions',accessToken);permissions=permissionsSummary(perm.data||[])}catch{}
+  return{page:{id:page.id,name:page.name||'Facebook',username:page.username||null,instagram:page.instagram_business_account||null},permissions};
+}
 function accessTokenFromAccount(account){
   if(account?.credentialCiphertext&&account?.credentialIv&&account?.credentialTag){return decryptSecret({ciphertext:account.credentialCiphertext,iv:account.credentialIv,tag:account.credentialTag})}
   if(process.env.META_ACCESS_TOKEN)return process.env.META_ACCESS_TOKEN;
@@ -63,4 +73,4 @@ async function publishMeta(account,piece,{publicImageUrl}={}){
   }
   throw new Error(`META_PLATFORM_NOT_IMPLEMENTED_${account.platform}`);
 }
-module.exports={apiVersion,discoverMetaPages,decryptTicket,validateMetaAccount,publishMeta,accessTokenFromAccount};
+module.exports={apiVersion,discoverMetaPages,inspectPageAccessToken,decryptTicket,validateMetaAccount,publishMeta,accessTokenFromAccount};
