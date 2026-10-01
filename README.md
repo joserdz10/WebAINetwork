@@ -1,4 +1,4 @@
-# AI Media Network v1.6.1
+# AI Media Network v1.6.2
 
 ## Template Library universal
 
@@ -99,8 +99,14 @@ Cada identidad ahora separa ADN Editorial y ADN Visual. El Visual Engine utiliza
 Facebook e Instagram se conectan desde **Integraciones**. Los tokens de página se cifran con AES-256-GCM antes de guardarse en PostgreSQL. Configura una sola vez `SOCIAL_CREDENTIALS_KEY` en Railway; después las páginas se detectan, asignan a una identidad, validan y desconectan desde la propia plataforma. El token temporal usado para descubrir páginas no se conserva.
 
 
-## Meta direct Page Access Token v1.6.1
+## Meta direct Page Access Token v1.6.2
 - Permite conectar directamente una página con un Page Access Token existente.
 - Mantiene el flujo de User Access Token para detectar varias páginas.
 - Reutiliza cuentas Facebook/Instagram existentes sin ID externo para evitar duplicados.
 - Valida la página antes de cifrar y guardar la credencial.
+
+
+## v1.6.2
+- Validación robusta de Page Access Token con consulta mínima a Meta antes de pedir campos adicionales.
+- Manejo específico del error `Invalid JSON for postcard`.
+- Instagram asociado y username se consultan de forma opcional, sin bloquear la conexión de Facebook.

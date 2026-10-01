@@ -36,11 +36,27 @@ async function discoverMetaPages(accessToken){
 async function inspectPageAccessToken(accessToken){
   if(!secretVaultConfigured())throw new Error('SOCIAL_CREDENTIALS_KEY_NOT_CONFIGURED');
   if(!accessToken)throw new Error('META_ACCESS_TOKEN_REQUIRED');
-  const page=await graphGet('me',accessToken,{fields:'id,name,username,instagram_business_account{id,username,name,profile_picture_url}'});
+  // Validate with the smallest possible Page request first. Some Page tokens/apps
+  // reject richer /me field expansions even though the token itself is usable.
+  let page;
+  try{
+    page=await graphGet('me',accessToken,{fields:'id,name'});
+  }catch(e){
+    if(String(e.message||'').includes('Invalid JSON for postcard')){
+      const err=new Error('META_PAGE_TOKEN_REJECTED: Meta rechazó este Page Access Token durante la validación. Verifica que el token siga vigente y que pertenezca a una app/página con acceso permitido.');
+      err.status=e.status||400;throw err;
+    }
+    throw e;
+  }
   if(!page?.id)throw new Error('META_PAGE_TOKEN_INVALID');
-  let permissions={granted:[],declined:[]};
+  let username=null,instagram=null,permissions={granted:[],declined:[]};
+  try{const extra=await graphGet(page.id,accessToken,{fields:'username'});username=extra?.username||null}catch{}
+  try{const extra=await graphGet(page.id,accessToken,{fields:'instagram_business_account'});if(extra?.instagram_business_account?.id){
+    const ig=await graphGet(extra.instagram_business_account.id,accessToken,{fields:'id,username,name,profile_picture_url'}).catch(()=>extra.instagram_business_account);
+    instagram=ig||extra.instagram_business_account;
+  }}catch{}
   try{const perm=await graphGet('me/permissions',accessToken);permissions=permissionsSummary(perm.data||[])}catch{}
-  return{page:{id:page.id,name:page.name||'Facebook',username:page.username||null,instagram:page.instagram_business_account||null},permissions};
+  return{page:{id:page.id,name:page.name||'Facebook',username,instagram},permissions};
 }
 function accessTokenFromAccount(account){
   if(account?.credentialCiphertext&&account?.credentialIv&&account?.credentialTag){return decryptSecret({ciphertext:account.credentialCiphertext,iv:account.credentialIv,tag:account.credentialTag})}
