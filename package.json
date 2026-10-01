@@ -1,6 +1,6 @@
 {
   "name": "ai-media-network",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "private": true,
   "description": "AI Media Network - plataforma integral de inteligencia editorial, generación y distribución",
   "scripts": {

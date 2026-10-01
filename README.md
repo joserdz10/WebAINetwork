@@ -1,4 +1,4 @@
-# AI Media Network v1.6.2
+# AI Media Network v1.6.3
 
 ## Template Library universal
 
@@ -99,14 +99,21 @@ Cada identidad ahora separa ADN Editorial y ADN Visual. El Visual Engine utiliza
 Facebook e Instagram se conectan desde **Integraciones**. Los tokens de página se cifran con AES-256-GCM antes de guardarse en PostgreSQL. Configura una sola vez `SOCIAL_CREDENTIALS_KEY` en Railway; después las páginas se detectan, asignan a una identidad, validan y desconectan desde la propia plataforma. El token temporal usado para descubrir páginas no se conserva.
 
 
-## Meta direct Page Access Token v1.6.2
+## Meta direct Page Access Token v1.6.3
 - Permite conectar directamente una página con un Page Access Token existente.
 - Mantiene el flujo de User Access Token para detectar varias páginas.
 - Reutiliza cuentas Facebook/Instagram existentes sin ID externo para evitar duplicados.
 - Valida la página antes de cifrar y guardar la credencial.
 
 
-## v1.6.2
+## v1.6.3
 - Validación robusta de Page Access Token con consulta mínima a Meta antes de pedir campos adicionales.
 - Manejo específico del error `Invalid JSON for postcard`.
 - Instagram asociado y username se consultan de forma opcional, sin bloquear la conexión de Facebook.
+
+
+## v1.6.3 — Source Image Pipeline
+- Las noticias usan fotografía real extraída de RSS, Open Graph, Twitter Card o JSON-LD de la fuente.
+- No se generan fotos sintéticas para noticias reales.
+- Si no hay fotografía verificable, la pieza queda marcada sin foto en vez de inventarla.
+- Norte En Alerta usa DejaVu Sans/Serif para render robusto de español y valida titular/fuente antes de componer.

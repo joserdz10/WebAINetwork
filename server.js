@@ -35,7 +35,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.6.2',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.6.3',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.use('/api',dbGuard);
 
@@ -142,7 +142,7 @@ app.put('/api/settings/:key',async(req,res)=>{try{res.json({ok:true,data:await p
 app.use(express.static(publicDir));
 app.use((_req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 prepareDatabase().finally(()=>{
-  app.listen(port,()=>console.log(`AI Media Network v1.6.0 en puerto ${port}`));
+  app.listen(port,()=>console.log(`AI Media Network v1.6.3 en puerto ${port}`));
   setInterval(()=>{if(databaseReady)processScheduled(prisma).catch(e=>console.error('Scheduled worker',e.message))},60000);
   const every=Number(process.env.AUTO_DISCOVERY_INTERVAL_MINUTES||0);
   if(every>0)setInterval(()=>{if(databaseReady)runDiscovery(prisma,process.env.AUTO_DISCOVERY_STATE||'NL',{hours:Number(process.env.AUTO_DISCOVERY_HOURS||6)}).catch(e=>console.error('Auto discovery',e.message))},every*60000);
