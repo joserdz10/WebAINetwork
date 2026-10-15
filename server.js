@@ -35,7 +35,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.6.3',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.6.4',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.use('/api',dbGuard);
 
@@ -81,6 +81,13 @@ crudRoutes('sources','source',(b,s)=>({stateBrainId:s.id,name:b.name,type:b.type
 
 app.get('/api/radar',async(req,res)=>{try{const stateCode=req.query.state||'NL',since=new Date(Date.now()-24*3600000);const topics=await prisma.topic.findMany({where:{stateBrain:{stateCode}},include:{storyLinks:{where:{story:{detectedAt:{gte:since}}},include:{story:true}}}});const watches=await prisma.watch.findMany({where:{stateBrain:{stateCode},isActive:true}});const candidates=await prisma.discoveryCandidate.findMany({where:{discoveryRun:{stateBrain:{stateCode}},createdAt:{gte:since},status:{in:['CANDIDATE','PROMOTED']}},take:200});res.json({ok:true,data:{topics:topics.map(t=>({id:t.id,name:t.name,priority:t.priority,stories24h:t.storyLinks.length})).sort((a,b)=>b.stories24h-a.stories24h),watches,candidateSignals:candidates.slice(0,20)}})}catch(e){fail(res,e)}});
 
+app.get('/api/news',async(req,res)=>{try{
+ const stateCode=String(req.query.state||'NL');const hours=Math.min(168,Math.max(1,Number(req.query.hours||24)));
+ const state=await prisma.stateBrain.findFirst({where:{stateCode}});if(!state)return fail(res,new Error('STATE_NOT_FOUND'),404);
+ const since=new Date(Date.now()-hours*3600000);
+ const items=await prisma.discoveryCandidate.findMany({where:{discoveryRun:{stateBrainId:state.id},status:{in:['CANDIDATE','LOW_RELEVANCE']},OR:[{publishedAt:{gte:since}},{publishedAt:null,createdAt:{gte:since}}]},include:{source:true},orderBy:[{publishedAt:'desc'},{createdAt:'desc'}],take:250});
+ res.json({ok:true,data:items});
+}catch(e){fail(res,e)}});
 app.post('/api/discovery/run',async(req,res)=>{try{res.status(201).json({ok:true,data:await runDiscovery(prisma,req.body?.stateCode||'NL',{hours:req.body?.hours,threshold:req.body?.threshold})})}catch(e){fail(res,e)}});
 app.get('/api/discovery/candidates',async(req,res)=>{try{const where={discoveryRun:{stateBrain:{stateCode:req.query.state||'NL'}}};if(req.query.status)where.status=req.query.status;res.json({ok:true,data:await prisma.discoveryCandidate.findMany({where,include:{source:true,discoveryRun:true,story:true},orderBy:[{relevanceScore:'desc'},{createdAt:'desc'}],take:250})})}catch(e){fail(res,e)}});
 app.post('/api/discovery/candidates/:id/promote',async(req,res)=>{try{res.status(201).json({ok:true,data:await candidateToStory(prisma,req.params.id)})}catch(e){fail(res,e)}});
@@ -142,7 +149,7 @@ app.put('/api/settings/:key',async(req,res)=>{try{res.json({ok:true,data:await p
 app.use(express.static(publicDir));
 app.use((_req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 prepareDatabase().finally(()=>{
-  app.listen(port,()=>console.log(`AI Media Network v1.6.3 en puerto ${port}`));
+  app.listen(port,()=>console.log(`AI Media Network v1.6.4 en puerto ${port}`));
   setInterval(()=>{if(databaseReady)processScheduled(prisma).catch(e=>console.error('Scheduled worker',e.message))},60000);
   const every=Number(process.env.AUTO_DISCOVERY_INTERVAL_MINUTES||0);
   if(every>0)setInterval(()=>{if(databaseReady)runDiscovery(prisma,process.env.AUTO_DISCOVERY_STATE||'NL',{hours:Number(process.env.AUTO_DISCOVERY_HOURS||6)}).catch(e=>console.error('Auto discovery',e.message))},every*60000);
