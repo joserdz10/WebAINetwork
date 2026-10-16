@@ -1,0 +1,4 @@
+# Fontconfig + DejaVu are required for Sharp SVG text rendering on Railway.
+# Without them the PNG silently contains squares instead of Spanish glyphs.
+[phases.setup]
+aptPkgs = ["fontconfig", "fonts-dejavu-core"]

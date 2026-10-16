@@ -1,9 +1,29 @@
 const sharp=require('sharp');
 const fs=require('fs');
 const path=require('path');
+const {execFileSync}=require('child_process');
 
 const BRAND_DIR=path.join(__dirname,'..','public','brand','norte-en-alerta');
 const CREAM='#f4efe5', INK='#0c2928', GREEN='#0d4a46', TERRACOTTA='#b56b45';
+// Sharp/libvips uses fontconfig to resolve SVG font families. Missing fonts
+// silently render as tofu squares, so fail instead of producing a publishable PNG.
+let fontsVerified=false;
+function requireEditorialFonts(){
+ if(fontsVerified)return;
+ for(const family of ['DejaVu Sans','DejaVu Serif']){
+  let match;
+  try{match=execFileSync('fc-match',['-f','%{family}\n',family],{encoding:'utf8',timeout:4000}).trim().split('\n')[0]}
+  catch{throw new Error('TEMPLATE_FONTS_UNAVAILABLE: fontconfig no está disponible en el servidor')}
+  if(!match.toLowerCase().includes(family.toLowerCase()))throw new Error(`TEMPLATE_FONTS_UNAVAILABLE: falta ${family}; se canceló el render para evitar cuadros en el texto`);
+ }
+ fontsVerified=true;
+}
+function validateText(data){
+ for(const key of ['headline','category','summary','source']){
+  if(!String(data[key]||'').trim())throw new Error(`TEMPLATE_${key.toUpperCase()}_REQUIRED`);
+ }
+}
+
 
 function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))}
 function words(text,max=90){const t=String(text||'').trim();return t.length<=max?t:t.slice(0,max-1).replace(/\s+\S*$/,'')+'…'}
@@ -18,9 +38,9 @@ function neaOverlay({headline,category,summary,source}){
  <text x="670" y="64" fill="${TERRACOTTA}" font-family="DejaVu Sans" font-size="19" font-weight="700" letter-spacing="1.2">NUEVO LEÓN, SIEMPRE DA TEMA.</text>
  <text x="70" y="725" fill="${INK}" font-family="DejaVu Sans" font-size="22" font-weight="700" letter-spacing=".8">NUEVO LEÓN  |  ${esc(String(category||'ACTUALIDAD').toUpperCase())}</text>
  <text x="70" y="805" fill="${INK}" font-family="DejaVu Serif" font-size="56" font-weight="700">${tspans}</text>
- <text x="70" y="1175" fill="#394342" font-family="DejaVu Sans" font-size="26">${esc(words(summary,78))}</text>
+ <text x="70" y="1122" fill="#394342" font-family="DejaVu Sans" font-size="24">${wrap(summary,76,2).map((line,i)=>`<tspan x="70" dy="${i?32:0}">${esc(line)}</tspan>`).join('')}</text>
  <rect x="70" y="1195" width="54" height="5" fill="${TERRACOTTA}"/>
- <text x="70" y="1218" fill="#5b5b5b" font-family="DejaVu Sans" font-size="15" font-weight="700">FUENTE: ${esc(words(source||'AI Media Network',70))}</text>
+ <text x="70" y="1220" fill="#5b5b5b" font-family="DejaVu Sans" font-size="15" font-weight="700">FUENTE: ${esc(words(source||'AI Media Network',70))}</text>
  <text x="320" y="1305" fill="#fff" font-family="DejaVu Sans" font-size="16" font-weight="700" letter-spacing="1">SERIO  •  CONFIABLE  •  EDITORIAL  •  REGIONAL</text>
  </svg>`)
 }
@@ -28,6 +48,8 @@ async function renderNorteEnAlertaFeed({photo,headline,category,summary,source})
  if(!photo)throw new Error('TEMPLATE_REAL_PHOTO_REQUIRED');
  if(!String(headline||'').trim())throw new Error('TEMPLATE_HEADLINE_REQUIRED');
  if(!String(source||'').trim())throw new Error('TEMPLATE_SOURCE_REQUIRED');
+ requireEditorialFonts();
+ validateText({headline,category,summary,source});
  const photoBuf=await sourceBuffer(photo);
  const prepared=await sharp(photoBuf).resize(1080,500,{fit:'cover',position:'attention'}).png().toBuffer();
  const logo=fs.readFileSync(path.join(BRAND_DIR,'logo-header.png'));
@@ -57,7 +79,9 @@ function textSvg(width,height,layerMap,data){
 
 async function renderGenericLayered(template,data){
   if(!template.baseImageData) throw new Error('TEMPLATE_BASE_IMAGE_REQUIRED');
-  const width=template.width,height=template.height,map=template.layerMap||{};
+  requireEditorialFonts();
+ validateText(data);
+ const width=template.width,height=template.height,map=template.layerMap||{};
   let base=Buffer.from(template.baseImageData);
   base=await sharp(base).resize(width,height,{fit:'fill'}).png().toBuffer();
   const composites=[];

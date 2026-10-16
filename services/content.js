@@ -64,7 +64,7 @@ async function generatePieceImage(prisma,id){
     const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),imagePolicy:'SOURCE_ONLY',syntheticImage:false,imageStatus:'SOURCE_IMAGE_UNUSABLE',templateCode:template?.code||null,generatedAt:new Date().toISOString()};
     await prisma.contentPiece.update({where:{id},data:{metadata}});throw new Error(`REAL_SOURCE_IMAGE_UNUSABLE: Encontré imagen de fuente, pero no pude utilizarla${lastError?` (${lastError.message})`:''}. No se generará una sustitución sintética.`);
   }
-  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.3',templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
+  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.5',templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
   await prisma.story.update({where:{id:piece.story.id},data:{generationContext:{...(piece.story.generationContext||{}),sourceImage:used,imagePolicy:'SOURCE_ONLY'}}}).catch(()=>{});
   return prisma.contentPiece.update({where:{id},data:{imageUrl,metadata}});
 }
