@@ -4,6 +4,7 @@ const cheerio=require('cheerio');
 const parser=new Parser({timeout:12000,headers:{'User-Agent':'AI-Media-Network/1.0 Editorial Discovery'}});
 
 function strip(text=''){return String(text).replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim()}
+const {cleanEditorialText}=require('./editorial-clean');
 function norm(text=''){return strip(text).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim()}
 function hashTitle(title=''){return crypto.createHash('sha1').update(norm(title)).digest('hex')}
 function canonical(url){try{const u=new URL(url);['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid'].forEach(k=>u.searchParams.delete(k));u.hash='';return u.toString()}catch{return url}}
@@ -53,12 +54,12 @@ function scoreCandidate(item,{topics,profiles,watches}){
 
 async function rssItems(source){
   const feed=await parser.parseURL(source.url);
-  return (feed.items||[]).slice(0,60).map(i=>({sourceId:source.id,title:strip(i.title),url:i.link||i.guid,excerpt:strip(i.contentSnippet||i.content||i.summary||''),publishedAt:i.isoDate?new Date(i.isoDate):i.pubDate&& !Number.isNaN(Date.parse(i.pubDate))?new Date(i.pubDate):null,imageUrl:rssImage(i)})).filter(x=>x.title&&x.url);
+  return (feed.items||[]).slice(0,60).map(i=>({sourceId:source.id,title:cleanEditorialText(i.title),url:i.link||i.guid,excerpt:cleanEditorialText(i.contentSnippet||i.content||i.summary||''),publishedAt:i.isoDate?new Date(i.isoDate):i.pubDate&& !Number.isNaN(Date.parse(i.pubDate))?new Date(i.pubDate):null,imageUrl:rssImage(i)})).filter(x=>x.title&&x.url);
 }
 async function htmlItems(source){
   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),12000);
   try{const r=await fetch(source.url,{headers:{'User-Agent':'AI-Media-Network/1.0 Editorial Discovery','Accept':'text/html,application/xhtml+xml'},signal:ctrl.signal});if(!r.ok)throw new Error(`HTTP_${r.status}`);const html=await r.text();const $=cheerio.load(html);const out=[];const seen=new Set();
-    $('article a[href], main a[href], .view-content a[href], a[href]').each((_,el)=>{if(out.length>=100)return false;let title=strip($(el).text());if(title.length<24||title.length>220)return;let url;try{url=new URL($(el).attr('href'),source.url).href}catch{return}if(!/^https?:/.test(url))return;url=canonical(url);if(seen.has(url))return;seen.add(url);const parent=$(el).closest('article,li,.views-row,.card,.item');const excerpt=strip(parent.find('p').first().text()).slice(0,500)||null;const dateText=strip(parent.find('time').attr('datetime')||parent.find('time').text()||'');const publishedAt=dateText&&!Number.isNaN(Date.parse(dateText))?new Date(dateText):null;const rawImg=parent.find('img').first().attr('src')||parent.find('img').first().attr('data-src')||null;const imageUrl=rawImg?absolute(rawImg,source.url):null;out.push({sourceId:source.id,title,url,excerpt,publishedAt,imageUrl})});
+    $('article a[href], main a[href], .view-content a[href], a[href]').each((_,el)=>{if(out.length>=100)return false;let title=cleanEditorialText($(el).text());if(title.length<24||title.length>220)return;let url;try{url=new URL($(el).attr('href'),source.url).href}catch{return}if(!/^https?:/.test(url))return;url=canonical(url);if(seen.has(url))return;seen.add(url);const parent=$(el).closest('article,li,.views-row,.card,.item');const excerpt=cleanEditorialText(parent.find('p').first().text()).slice(0,500)||null;const dateText=strip(parent.find('time').attr('datetime')||parent.find('time').text()||'');const publishedAt=dateText&&!Number.isNaN(Date.parse(dateText))?new Date(dateText):null;const rawImg=parent.find('img').first().attr('src')||parent.find('img').first().attr('data-src')||null;const imageUrl=rawImg?absolute(rawImg,source.url):null;out.push({sourceId:source.id,title,url,excerpt,publishedAt,imageUrl})});
     return out;
   }finally{clearTimeout(timer)}
 }
@@ -88,7 +89,7 @@ async function candidateToStory(prisma,id){
   let imageUrl=c.metadata?.imageUrl||null,imageOrigin=c.metadata?.imageOrigin||null;
   if(!imageUrl){imageUrl=await resolveArticleImage(c.url);if(imageUrl)imageOrigin='ARTICLE_METADATA'}
   const imageInfo=imageUrl?{url:imageUrl,origin:imageOrigin||'ARTICLE_METADATA',sourceUrl:c.url,sourceName:c.source?.name||null,synthetic:false}:null;
-  const story=await prisma.story.create({data:{stateBrainId:c.discoveryRun.stateBrainId,title:c.title,status:'DISCOVERED',priority:c.relevanceScore>=.85?'HIGH':'NORMAL',confidence:c.source?.trustScore>=.9?'HIGH':c.source?.trustScore>=.75?'MEDIUM':'LOW',summary:c.excerpt,generationContext:{discoveryCandidateId:c.id,matches:c.metadata?.matches||[],relevanceScore:c.relevanceScore,sourceImage:imageInfo,imagePolicy:'SOURCE_ONLY'},sources:c.sourceId?{create:{sourceId:c.sourceId,sourceUrl:c.url,sourceTitle:c.title,publishedAt:c.publishedAt,excerpt:c.excerpt,isPrimary:true,verification:imageInfo?{imageUrl:imageInfo.url,imageOrigin:imageInfo.origin,synthetic:false}:undefined}}:undefined}});
+  const story=await prisma.story.create({data:{stateBrainId:c.discoveryRun.stateBrainId,title:cleanEditorialText(c.title),status:'DISCOVERED',priority:c.relevanceScore>=.85?'HIGH':'NORMAL',confidence:c.source?.trustScore>=.9?'HIGH':c.source?.trustScore>=.75?'MEDIUM':'LOW',summary:cleanEditorialText(c.excerpt),generationContext:{discoveryCandidateId:c.id,matches:c.metadata?.matches||[],relevanceScore:c.relevanceScore,sourceImage:imageInfo,imagePolicy:'SOURCE_ONLY'},sources:c.sourceId?{create:{sourceId:c.sourceId,sourceUrl:c.url,sourceTitle:cleanEditorialText(c.title),publishedAt:c.publishedAt,excerpt:cleanEditorialText(c.excerpt),isPrimary:true,verification:imageInfo?{imageUrl:imageInfo.url,imageOrigin:imageInfo.origin,synthetic:false}:undefined}}:undefined}});
   await prisma.$transaction([prisma.discoveryCandidate.update({where:{id},data:{storyId:story.id,status:'PROMOTED',decisionReason:'Aprobado por operador'}}),prisma.discoveryRun.update({where:{id:c.discoveryRunId},data:{storiesCreated:{increment:1}}}),prisma.activityEvent.create({data:{type:'CANDIDATE_PROMOTED',entityType:'STORY',entityId:story.id,title:`Historia #${story.publicId} creada desde Descubrimiento`,detail:story.title,metadata:{sourceImage:imageInfo}}})]);
   return story;
 }
