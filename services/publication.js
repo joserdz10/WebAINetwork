@@ -1,3 +1,4 @@
+const {VISUAL_TYPES,validateVisual,context,safeCaption}=require('./visual-policy');
 const {publishMeta}=require('./integrations/meta');
 const {sendTelegram}=require('./integrations/telegram');
 const {uploadTextToDrive}=require('./integrations/drive');
@@ -21,6 +22,7 @@ async function publishPiece(prisma,{pieceId,accountId}){
   if(!piece||!account) throw new Error('PIECE_OR_ACCOUNT_NOT_FOUND');
   if(!account.isActive||account.connectionStatus!=='CONNECTED')throw new Error('SOCIAL_ACCOUNT_NOT_CONNECTED');
   if(!['APPROVED','SCHEDULED'].includes(piece.status))throw new Error('CONTENT_MUST_BE_APPROVED_BEFORE_PUBLISHING');
+  if(VISUAL_TYPES.has(piece.type)){const m=piece.metadata||{};validateVisual({caption:m.visualCaption||safeCaption(piece.headline),summary:m.visualSummary||context(piece.story,piece.copy),source:m.visualSource,imageUrl:piece.imageUrl,metadata:m});}
   const publication=await prisma.publication.create({data:{contentPieceId:piece.id,socialAccountId:account.id,status:'PUBLISHING',attemptCount:1}});
   try{
     let result;

@@ -1,0 +1,5 @@
+const test=require('node:test');const assert=require('node:assert/strict');
+const {safeCaption,validCaption,validateVisual,normalize}=require('../services/visual-policy');
+test('caption breve y sin puntos suspensivos',()=>{assert.equal(safeCaption('Ricardo Monreal fija postura sobre debate nacional y explica su posición en conferencia'), 'Ricardo Monreal fija postura sobre debate nacional y explica su posición en conferencia');assert.equal(validCaption('Monreal fija postura sobre debate nacional'),true);assert.equal(validCaption('Noticia sobre...'),false)});
+test('null no es una bajada',()=>{assert.equal(normalize('null'),'');assert.throws(()=>validateVisual({caption:'Congreso presenta nueva propuesta',summary:'null',source:'ABC',requireImage:false}),/VISUAL_CONTEXT_REQUIRED/)});
+test('no aprueba sin foto real',()=>{assert.throws(()=>validateVisual({caption:'Congreso presenta nueva propuesta',summary:'El Congreso informó los cambios.',source:'ABC',imageUrl:'x',metadata:{syntheticImage:true}}),/VISUAL_REAL_PHOTO_REQUIRED/)});

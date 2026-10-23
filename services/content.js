@@ -2,6 +2,7 @@ const { callAI } = require('./ai');
 const { selectTemplate, renderTemplate } = require('./template-engine');
 const { resolveArticleImage } = require('./discovery');
 const { cleanEditorialText } = require('./editorial-clean');
+const {POLICY_VERSION,VISUAL_TYPES,safeCaption,validCaption,context,normalize,validateVisual}=require('./visual-policy');
 
 const FORMAT_RULES={
   FACEBOOK_POST:'Post de Facebook: titular claro, copy informativo de 2 a 5 párrafos cortos y cierre sin clickbait.',
@@ -34,7 +35,15 @@ async function generatePiece(prisma,{publicId,identityId,type}){
   if(generated.copy) generated.copy=cleanEditorialText(generated.copy);
   const last=await prisma.contentPiece.findFirst({where:{storyId:story.id,mediaIdentityId:identity.id,type},orderBy:{version:'desc'}});
   const sourceImage=story.generationContext?.sourceImage||null;
-  const piece=await prisma.contentPiece.create({data:{storyId:story.id,mediaIdentityId:identity.id,type,status:'GENERATED',version:(last?.version||0)+1,headline:generated.headline,copy:generated.copy,body:generated.body,generationPrompt:null,metadata:{engine:process.env.OPENAI_API_KEY?'AI':'FALLBACK',createdFromStoryVersion:story.updatedAt.toISOString(),imagePolicy:'SOURCE_ONLY',sourceImage:sourceImage||null,syntheticImage:false}}});
+  const visualContext=context(story,generated.copy);
+  let visualCaption=VISUAL_TYPES.has(type)?safeCaption(generated.headline):null;
+  if(VISUAL_TYPES.has(type)&&process.env.OPENAI_API_KEY){
+    try{
+      const draft=await callAI({system:'Redacta un caption visual informativo, autocontenido, máximo 15 palabras. No inventes datos, no uses puntos suspensivos ni frases inconclusas. Si faltan hechos, devuelve caption vacío.',input:`TÍTULO: ${story.title}\nRESUMEN: ${story.summary||''}\nHECHOS: ${JSON.stringify(story.keyFacts||[])}\nFUENTES: ${(story.sources||[]).map(x=>x.source?.name).join(', ')}`,jsonSchema:{name:'visual_caption',schema:{type:'object',additionalProperties:false,properties:{caption:{type:'string'}},required:['caption']}}});
+      if(validCaption(draft?.caption))visualCaption=normalize(draft.caption);
+    }catch(e){console.warn('Visual caption AI failed:',e.message)}
+  }
+  const piece=await prisma.contentPiece.create({data:{storyId:story.id,mediaIdentityId:identity.id,type,status:'GENERATED',version:(last?.version||0)+1,headline:generated.headline,copy:generated.copy,body:generated.body,generationPrompt:null,metadata:{engine:process.env.OPENAI_API_KEY?'AI':'FALLBACK',createdFromStoryVersion:story.updatedAt.toISOString(),imagePolicy:'SOURCE_ONLY',sourceImage:sourceImage||null,syntheticImage:false,visualPolicy:VISUAL_TYPES.has(type)?POLICY_VERSION:null,visualCaption,visualSummary:visualContext||null,visualSource:story.sources?.[0]?.source?.name||null}}});
   await prisma.story.update({where:{id:story.id},data:{status:'CONTENT_READY'}});await prisma.activityEvent.create({data:{type:'CONTENT_GENERATED',scope:story.stateBrain.stateCode,entityType:'CONTENT_PIECE',entityId:piece.id,title:`${type} generado para ${identity.name}`,detail:story.title}});return piece;
 }
 async function generatePieces(prisma,args){const results=[];for(const type of args.types||[]) results.push(await generatePiece(prisma,{...args,type}));return results}
@@ -50,7 +59,13 @@ async function realSourceImages(story){
 }
 async function generatePieceImage(prisma,id){
   const piece=await prisma.contentPiece.findUnique({where:{id},include:{story:{include:{sources:{include:{source:true}},topics:{include:{topic:true}}}},mediaIdentity:{include:{mediaDNA:true,visualDNA:true,templates:true}}}});if(!piece) throw new Error('CONTENT_PIECE_NOT_FOUND');
-  const template=selectTemplate(piece.mediaIdentity,piece.type,piece.mediaIdentity.templates||[]);const candidates=await realSourceImages(piece.story);
+  const template=selectTemplate(piece.mediaIdentity,piece.type,piece.mediaIdentity.templates||[]);
+  const oldMeta=piece.metadata||{};
+  const visualCaption=VISUAL_TYPES.has(piece.type)?(validCaption(oldMeta.visualCaption)?normalize(oldMeta.visualCaption):safeCaption(piece.headline||piece.story.title)):normalize(piece.headline||piece.story.title);
+  const visualSummary=normalize(oldMeta.visualSummary)||context(piece.story,piece.copy);
+  const sourceName=piece.story.sources?.[0]?.source?.name||'Fuente original';
+  if(template&&VISUAL_TYPES.has(piece.type))validateVisual({caption:visualCaption,summary:visualSummary,source:sourceName,requireImage:false});
+  const candidates=await realSourceImages(piece.story);
   if(!candidates.length){
     const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),imagePolicy:'SOURCE_ONLY',syntheticImage:false,imageStatus:'NO_REAL_SOURCE_IMAGE',templateCode:template?.code||null,generatedAt:new Date().toISOString()};
     await prisma.contentPiece.update({where:{id},data:{metadata}});throw new Error('REAL_SOURCE_IMAGE_NOT_FOUND: La fuente no publicó una fotografía utilizable. El sistema no generará una foto falsa para una noticia real.');
@@ -58,7 +73,7 @@ async function generatePieceImage(prisma,id){
   let imageUrl=null,templateCode=null,used=null,lastError=null;
   for(const realImage of candidates){
     try{
-      if(template){const rendered=await renderTemplate(template,{photo:realImage.url,headline:cleanEditorialText(piece.headline||piece.story.title),category:piece.story.topics?.[0]?.topic?.name||'ACTUALIDAD',summary:cleanEditorialText(piece.story.summary||piece.copy||'Información en desarrollo.'),source:piece.story.sources?.[0]?.source?.name||realImage.sourceName||'Fuente original'});imageUrl=`data:image/png;base64,${rendered.toString('base64')}`;templateCode=template.code}
+      if(template){const rendered=await renderTemplate(template,{photo:realImage.url,headline:visualCaption,category:piece.story.topics?.[0]?.topic?.name||'ACTUALIDAD',summary:visualSummary,source:piece.story.sources?.[0]?.source?.name||realImage.sourceName||'Fuente original'});imageUrl=`data:image/png;base64,${rendered.toString('base64')}`;templateCode=template.code}
       else imageUrl=realImage.url;
       used=realImage;break;
     }catch(e){lastError=e;console.warn('Source image rejected:',realImage.url,e.message)}
@@ -67,7 +82,7 @@ async function generatePieceImage(prisma,id){
     const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),imagePolicy:'SOURCE_ONLY',syntheticImage:false,imageStatus:'SOURCE_IMAGE_UNUSABLE',templateCode:template?.code||null,generatedAt:new Date().toISOString()};
     await prisma.contentPiece.update({where:{id},data:{metadata}});throw new Error(`REAL_SOURCE_IMAGE_UNUSABLE: Encontré imagen de fuente, pero no pude utilizarla${lastError?` (${lastError.message})`:''}. No se generará una sustitución sintética.`);
   }
-  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.5',templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
+  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.7',visualPolicy:POLICY_VERSION,visualCaption,visualSummary,templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
   await prisma.story.update({where:{id:piece.story.id},data:{generationContext:{...(piece.story.generationContext||{}),sourceImage:used,imagePolicy:'SOURCE_ONLY'}}}).catch(()=>{});
   return prisma.contentPiece.update({where:{id},data:{imageUrl,metadata}});
 }

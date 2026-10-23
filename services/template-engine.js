@@ -31,7 +31,7 @@ function wrap(text,maxChars=28,maxLines=3){const ws=String(text||'').trim().spli
 function dataUriToBuffer(v){const m=String(v||'').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/s);return m?Buffer.from(m[1],'base64'):null}
 async function sourceBuffer(value){const local=dataUriToBuffer(value);if(local)return local;if(/^https?:\/\//i.test(value||'')){const r=await fetch(value);if(!r.ok)throw new Error('SOURCE_IMAGE_DOWNLOAD_FAILED');return Buffer.from(await r.arrayBuffer())}throw new Error('SOURCE_IMAGE_INVALID')}
 function neaOverlay({headline,category,summary,source}){
- const lines=wrap(headline,28,3);const tspans=lines.map((x,i)=>`<tspan x="70" dy="${i?58:0}">${esc(x)}</tspan>`).join('');
+ const lines=wrap(headline,28,3);if(lines.some(x=>x.endsWith('…')))throw new Error('VISUAL_CAPTION_OVERFLOW: caption no cabe en el template');const tspans=lines.map((x,i)=>`<tspan x="70" dy="${i?58:0}">${esc(x)}</tspan>`).join('');
  return Buffer.from(`<svg width="1080" height="1350" xmlns="http://www.w3.org/2000/svg">
  <rect width="1080" height="1350" fill="${CREAM}"/>
  <rect y="1232" width="1080" height="118" fill="${GREEN}"/>
@@ -68,7 +68,7 @@ function textSvg(width,height,layerMap,data){
     const m=layerMap?.[field]; if(!m||!value) continue;
     const size=Number(m.fontSize||24), lineHeight=Math.round(size*1.15), maxLines=Number(m.maxLines||1);
     const chars=Math.max(8,Math.floor(Number(m.width||300)/(size*.56)));
-    const lines=wrap(value,chars,maxLines);
+    const lines=wrap(value,chars,maxLines);if(lines.some(x=>x.endsWith('…')))throw new Error(`VISUAL_TEXT_OVERFLOW_${field}: ajuste el caption o el mapa de plantilla`);
     const x=Number(m.x??m.left??0), y=Number(m.y??m.top??0)+size;
     const anchor=m.align==='center'?'middle':m.align==='right'?'end':'start';
     const tx=m.align==='center'?x+Number(m.width||0)/2:m.align==='right'?x+Number(m.width||0):x;
