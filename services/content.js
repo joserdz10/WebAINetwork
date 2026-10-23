@@ -1,6 +1,7 @@
 const { callAI } = require('./ai');
 const { selectTemplate, renderTemplate } = require('./template-engine');
-const { resolveArticleImage, resolveArticleContext } = require('./discovery');
+const { resolveArticleImage, resolveArticleContext, resolveArticleEditorial } = require('./discovery');
+const {assertEditorialQuality,validContext}=require('./editorial-quality');
 const { cleanEditorialText } = require('./editorial-clean');
 const {POLICY_VERSION,VISUAL_TYPES,safeCaption,validCaption,context,normalize,validateVisual}=require('./visual-policy');
 
@@ -27,6 +28,10 @@ function fallbackPiece(story,type,identity){
 async function generatePiece(prisma,{publicId,identityId,type}){
   if(!FORMAT_RULES[type]) throw new Error('INVALID_CONTENT_TYPE');
   const story=await prisma.story.findUnique({where:{publicId},include:{stateBrain:true,sources:{include:{source:true}},topics:{include:{topic:true}},profiles:{include:{profile:true}}}});if(!story) throw new Error('STORY_NOT_FOUND');
+  const article=await resolveArticleEditorial(story.sources?.[0]?.sourceUrl);
+  const verified=assertEditorialQuality({title:story.title,summary:story.summary,stateCode:story.stateBrain?.stateCode,articleTitle:article.title,articleContext:article.context});
+  story.title=verified.title;story.summary=verified.summary;
+  await prisma.story.update({where:{id:story.id},data:{title:verified.title,summary:verified.summary}});
   const identity=await prisma.mediaIdentity.findUnique({where:{id:identityId},include:{mediaDNA:true,visualDNA:true}});if(!identity) throw new Error('IDENTITY_NOT_FOUND');
   const dna=identity.mediaDNA||{};const schema={name:'content_piece',schema:{type:'object',additionalProperties:false,properties:{headline:{type:'string'},copy:{type:['string','null']},body:{type:['string','null']},imagePrompt:{type:['string','null']}},required:['headline','copy','body','imagePrompt']}};let generated;
   try{generated=await callAI({system:`Eres el estudio editorial de AI Media Network. Redacta contenido periodístico factual, claro y verificable. No inventes hechos, cifras o citas. Si el tema es político/electoral, mantén neutralidad informativa: no persuadas, no recomiendes opciones políticas, no clasifiques candidatos y no predigas elecciones. Respeta el ADN editorial sin sacrificar exactitud.`,input:`IDENTIDAD: ${identity.name}\nTONO: ${dna.tone||'informativo'}\nESTILO: ${dna.editorialStyle||'periodístico'}\nENFOQUE: ${dna.geographicFocus||story.stateBrain.name}\nREGLAS A EVITAR: ${JSON.stringify(dna.avoidRules||[])}\nFORMATO: ${type}\nREGLA DE FORMATO: ${FORMAT_RULES[type]}\n\nHISTORIA: ${story.title}\nRESUMEN: ${story.summary||''}\nCONTEXTO: ${story.context||''}\nDATOS CLAVE: ${JSON.stringify(story.keyFacts||[])}\nRIESGOS: ${JSON.stringify(story.editorialRisks||[])}\nFUENTES: ${(story.sources||[]).map(x=>`${x.source?.name}: ${x.sourceUrl||''}`).join('\n')}`,jsonSchema:schema})}catch(e){console.error('AI generation fallback:',e.message);generated=null}
@@ -59,13 +64,20 @@ async function realSourceImages(story){
 }
 async function generatePieceImage(prisma,id){
   const piece=await prisma.contentPiece.findUnique({where:{id},include:{story:{include:{sources:{include:{source:true}},topics:{include:{topic:true}}}},mediaIdentity:{include:{mediaDNA:true,visualDNA:true,templates:true}}}});if(!piece) throw new Error('CONTENT_PIECE_NOT_FOUND');
+  const state=await prisma.stateBrain.findUnique({where:{id:piece.story.stateBrainId}});
+  const article=await resolveArticleEditorial(piece.story.sources?.[0]?.sourceUrl);
+  const verified=assertEditorialQuality({title:piece.story.title,summary:piece.story.summary,stateCode:state?.stateCode,articleTitle:article.title,articleContext:article.context});
+  piece.story.title=verified.title;piece.story.summary=verified.summary;
+  await prisma.story.update({where:{id:piece.story.id},data:{title:verified.title,summary:verified.summary,generationContext:{...(piece.story.generationContext||{}),editorialQuality:'VERIFIED_V169',originalExtractedTitle:piece.story.generationContext?.originalExtractedTitle||piece.story.title}}});
   const template=selectTemplate(piece.mediaIdentity,piece.type,piece.mediaIdentity.templates||[]);
   const oldMeta=piece.metadata||{};
-  const visualCaption=VISUAL_TYPES.has(piece.type)?(validCaption(oldMeta.visualCaption)?normalize(oldMeta.visualCaption):safeCaption(piece.headline||piece.story.title)):normalize(piece.headline||piece.story.title);
-  let visualSummary=normalize(oldMeta.visualSummary)||context(piece.story,piece.copy);
+  let visualCaption=VISUAL_TYPES.has(piece.type)?safeCaption(verified.title):normalize(verified.title);
+  if(VISUAL_TYPES.has(piece.type)&&process.env.OPENAI_API_KEY){try{const proposal=await callAI({system:'Resume el hecho en un caption factual y completo de 8 a 15 palabras. Solo utiliza hechos de la fuente; sin nombres de autores, etiquetas, elipsis ni información añadida. Si no puedes, devuelve texto vacío.',input:`Titular: ${verified.title}\nContexto: ${verified.summary}`,jsonSchema:{name:'editorial_caption',schema:{type:'object',additionalProperties:false,properties:{caption:{type:'string'}},required:['caption']}}});if(validCaption(proposal?.caption))visualCaption=normalize(proposal.caption)}catch(e){console.warn('Caption editorial:',e.message)}}
+  let visualSummary=verified.summary;
   if(!visualSummary){
     for(const link of piece.story.sources||[]){
-      visualSummary=normalize(link.excerpt)||await resolveArticleContext(link.sourceUrl);
+      const recovered=normalize(link.excerpt)||await resolveArticleContext(link.sourceUrl);
+      visualSummary=validContext(recovered)?recovered:visualSummary;
       if(visualSummary)break;
     }
   }
@@ -93,7 +105,7 @@ async function generatePieceImage(prisma,id){
     const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),imagePolicy:'SOURCE_ONLY',syntheticImage:false,imageStatus:'SOURCE_IMAGE_UNUSABLE',templateCode:template?.code||null,generatedAt:new Date().toISOString()};
     await prisma.contentPiece.update({where:{id},data:{metadata}});throw new Error(`REAL_SOURCE_IMAGE_UNUSABLE: Encontré imagen de fuente, pero no pude utilizarla${lastError?` (${lastError.message})`:''}. No se generará una sustitución sintética.`);
   }
-  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.8',visualPolicy:POLICY_VERSION,visualCaption,visualSummary,templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
+  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.9',visualPolicy:POLICY_VERSION,visualCaption,visualSummary,templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
   await prisma.story.update({where:{id:piece.story.id},data:{generationContext:{...(piece.story.generationContext||{}),sourceImage:used,imagePolicy:'SOURCE_ONLY'}}}).catch(()=>{});
   return prisma.contentPiece.update({where:{id},data:{imageUrl,metadata}});
 }

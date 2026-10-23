@@ -52,6 +52,19 @@ async function resolveArticleContext(url){
   return /^(null|undefined)$/i.test(clean)?'':clean;
  }catch{return ''}finally{clearTimeout(timer)}
 }
+async function resolveArticleEditorial(url){
+ if(!url||!/^https?:\/\//i.test(url))return {title:'',context:''};
+ const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);
+ try{
+  const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 (compatible; AI-Media-Network/1.6.9)','Accept':'text/html'},redirect:'follow',signal:ctrl.signal});
+  if(!r.ok||!/html/i.test(r.headers.get('content-type')||''))return {title:'',context:''};
+  const $=cheerio.load(await r.text());
+  const title=cleanEditorialText($('meta[property="og:title"]').attr('content')||$('article h1').first().text()||$('h1').first().text()||'').replace(/\s+[|–-]\s+(?:ABC Noticias|Milenio|Noticias).*$/i,'').trim();
+  const desc=$('meta[property="og:description"]').attr('content')||$('meta[name="description"]').attr('content')||'';
+  const body=$('article p, [itemprop="articleBody"] p').map((_,el)=>strip($(el).text())).get().filter(t=>t.length>=45&&!/^(por |redacci[oó]n|publicado el)/i.test(t)).slice(0,3).join(' ');
+  return {title,context:cleanEditorialText(body||desc).slice(0,650)};
+ }catch{return {title:'',context:''}}finally{clearTimeout(timer)}
+}
 function rssImage(i){
   const candidates=[i.enclosure?.url,i['media:content']?.url,i['media:thumbnail']?.url,i.image?.url,i.image];
   return candidates.find(x=>typeof x==='string'&&/^https?:/i.test(x))||null;
@@ -107,4 +120,4 @@ async function candidateToStory(prisma,id){
   await prisma.$transaction([prisma.discoveryCandidate.update({where:{id},data:{storyId:story.id,status:'PROMOTED',decisionReason:'Aprobado por operador'}}),prisma.discoveryRun.update({where:{id:c.discoveryRunId},data:{storiesCreated:{increment:1}}}),prisma.activityEvent.create({data:{type:'CANDIDATE_PROMOTED',entityType:'STORY',entityId:story.id,title:`Historia #${story.publicId} creada desde Descubrimiento`,detail:story.title,metadata:{sourceImage:imageInfo}}})]);
   return story;
 }
-module.exports={runDiscovery,candidateToStory,resolveArticleImage,resolveArticleContext};
+module.exports={runDiscovery,candidateToStory,resolveArticleImage,resolveArticleContext,resolveArticleEditorial};

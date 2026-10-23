@@ -1,3 +1,4 @@
+const {assertEditorialQuality}=require('./editorial-quality');
 const {VISUAL_TYPES,validateVisual,context,safeCaption}=require('./visual-policy');
 const {publishMeta}=require('./integrations/meta');
 const {sendTelegram}=require('./integrations/telegram');
@@ -17,12 +18,12 @@ function publicImageUrl(piece){
   return `${base}/media/${encodeURIComponent(piece.id)}/${signMediaId(piece.id)}.png`;
 }
 async function publishPiece(prisma,{pieceId,accountId}){
-  const piece=await prisma.contentPiece.findUnique({where:{id:pieceId},include:{story:true,mediaIdentity:true}});
+  const piece=await prisma.contentPiece.findUnique({where:{id:pieceId},include:{story:{include:{stateBrain:true}},mediaIdentity:true}});
   const account=await prisma.socialAccount.findUnique({where:{id:accountId}});
   if(!piece||!account) throw new Error('PIECE_OR_ACCOUNT_NOT_FOUND');
   if(!account.isActive||account.connectionStatus!=='CONNECTED')throw new Error('SOCIAL_ACCOUNT_NOT_CONNECTED');
   if(!['APPROVED','SCHEDULED'].includes(piece.status))throw new Error('CONTENT_MUST_BE_APPROVED_BEFORE_PUBLISHING');
-  if(VISUAL_TYPES.has(piece.type)){const m=piece.metadata||{};validateVisual({caption:m.visualCaption||safeCaption(piece.headline),summary:m.visualSummary||context(piece.story,piece.copy),source:m.visualSource,imageUrl:piece.imageUrl,metadata:m});}
+  if(VISUAL_TYPES.has(piece.type)){assertEditorialQuality({title:piece.story.title,summary:piece.story.summary,stateCode:piece.story.stateBrain?.stateCode});const m=piece.metadata||{};validateVisual({caption:m.visualCaption||safeCaption(piece.headline),summary:m.visualSummary||context(piece.story,piece.copy),source:m.visualSource,imageUrl:piece.imageUrl,metadata:m});}
   const publication=await prisma.publication.create({data:{contentPieceId:piece.id,socialAccountId:account.id,status:'PUBLISHING',attemptCount:1}});
   try{
     let result;
