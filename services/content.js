@@ -1,6 +1,6 @@
 const { callAI } = require('./ai');
 const { selectTemplate, renderTemplate } = require('./template-engine');
-const { resolveArticleImage } = require('./discovery');
+const { resolveArticleImage, resolveArticleContext } = require('./discovery');
 const { cleanEditorialText } = require('./editorial-clean');
 const {POLICY_VERSION,VISUAL_TYPES,safeCaption,validCaption,context,normalize,validateVisual}=require('./visual-policy');
 
@@ -62,7 +62,15 @@ async function generatePieceImage(prisma,id){
   const template=selectTemplate(piece.mediaIdentity,piece.type,piece.mediaIdentity.templates||[]);
   const oldMeta=piece.metadata||{};
   const visualCaption=VISUAL_TYPES.has(piece.type)?(validCaption(oldMeta.visualCaption)?normalize(oldMeta.visualCaption):safeCaption(piece.headline||piece.story.title)):normalize(piece.headline||piece.story.title);
-  const visualSummary=normalize(oldMeta.visualSummary)||context(piece.story,piece.copy);
+  let visualSummary=normalize(oldMeta.visualSummary)||context(piece.story,piece.copy);
+  if(!visualSummary){
+    for(const link of piece.story.sources||[]){
+      visualSummary=normalize(link.excerpt)||await resolveArticleContext(link.sourceUrl);
+      if(visualSummary)break;
+    }
+  }
+  if(!visualSummary)throw new Error('VISUAL_CONTEXT_REQUIRED: La fuente no contiene contexto verificable; agrega una bajada editorial antes de generar');
+  visualSummary=visualSummary.slice(0,300);
   const sourceName=piece.story.sources?.[0]?.source?.name||'Fuente original';
   if(template&&VISUAL_TYPES.has(piece.type))validateVisual({caption:visualCaption,summary:visualSummary,source:sourceName,requireImage:false});
   const candidates=await realSourceImages(piece.story);
@@ -76,13 +84,16 @@ async function generatePieceImage(prisma,id){
       if(template){const rendered=await renderTemplate(template,{photo:realImage.url,headline:visualCaption,category:piece.story.topics?.[0]?.topic?.name||'ACTUALIDAD',summary:visualSummary,source:piece.story.sources?.[0]?.source?.name||realImage.sourceName||'Fuente original'});imageUrl=`data:image/png;base64,${rendered.toString('base64')}`;templateCode=template.code}
       else imageUrl=realImage.url;
       used=realImage;break;
-    }catch(e){lastError=e;console.warn('Source image rejected:',realImage.url,e.message)}
+    }catch(e){
+      if(/^(VISUAL_|TEMPLATE_(?!REAL_PHOTO|SOURCE_IMAGE))/.test(e.message))throw e;
+      lastError=e;console.warn('Source image rejected:',realImage.url,e.message);
+    }
   }
   if(!imageUrl||!used){
     const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),imagePolicy:'SOURCE_ONLY',syntheticImage:false,imageStatus:'SOURCE_IMAGE_UNUSABLE',templateCode:template?.code||null,generatedAt:new Date().toISOString()};
     await prisma.contentPiece.update({where:{id},data:{metadata}});throw new Error(`REAL_SOURCE_IMAGE_UNUSABLE: Encontré imagen de fuente, pero no pude utilizarla${lastError?` (${lastError.message})`:''}. No se generará una sustitución sintética.`);
   }
-  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.7',visualPolicy:POLICY_VERSION,visualCaption,visualSummary,templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
+  const metadata={...(piece.metadata&&typeof piece.metadata==='object'?piece.metadata:{}),visualEngine:'TEMPLATE_ENGINE_1.6.8',visualPolicy:POLICY_VERSION,visualCaption,visualSummary,templateCode,imagePolicy:'SOURCE_ONLY',imageStatus:'SOURCE_IMAGE_RENDERED',sourceImageUrl:used.url,sourceImageOrigin:used.origin,sourceImageSourceUrl:used.sourceUrl||null,syntheticImage:false,generatedAt:new Date().toISOString()};
   await prisma.story.update({where:{id:piece.story.id},data:{generationContext:{...(piece.story.generationContext||{}),sourceImage:used,imagePolicy:'SOURCE_ONLY'}}}).catch(()=>{});
   return prisma.contentPiece.update({where:{id},data:{imageUrl,metadata}});
 }

@@ -38,6 +38,20 @@ async function resolveArticleImage(url){
     return articleImg?absolute(articleImg,r.url||url):null;
   }catch{return null}finally{clearTimeout(timer)}
 }
+async function resolveArticleContext(url){
+ if(!url||!/^https?:/i.test(url))return '';
+ const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),12000);
+ try{
+  const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 (compatible; AI-Media-Network/1.6.8)','Accept':'text/html'},redirect:'follow',signal:ctrl.signal});
+  if(!r.ok||!/(text\/html|application\/xhtml)/i.test(r.headers.get('content-type')||''))return '';
+  const $=cheerio.load(await r.text());
+  const desc=$('meta[property="og:description"]').attr('content')||$('meta[name="description"]').attr('content')||$('meta[name="twitter:description"]').attr('content');
+  const paragraphs=$('article p, main article p, [itemprop="articleBody"] p').map((_,el)=>strip($(el).text())).get().filter(t=>t.length>=45);
+  const excerpt=paragraphs.slice(0,3).join(' ').slice(0,650);
+  const clean=cleanEditorialText(excerpt||desc||'');
+  return /^(null|undefined)$/i.test(clean)?'':clean;
+ }catch{return ''}finally{clearTimeout(timer)}
+}
 function rssImage(i){
   const candidates=[i.enclosure?.url,i['media:content']?.url,i['media:thumbnail']?.url,i.image?.url,i.image];
   return candidates.find(x=>typeof x==='string'&&/^https?:/i.test(x))||null;
@@ -93,4 +107,4 @@ async function candidateToStory(prisma,id){
   await prisma.$transaction([prisma.discoveryCandidate.update({where:{id},data:{storyId:story.id,status:'PROMOTED',decisionReason:'Aprobado por operador'}}),prisma.discoveryRun.update({where:{id:c.discoveryRunId},data:{storiesCreated:{increment:1}}}),prisma.activityEvent.create({data:{type:'CANDIDATE_PROMOTED',entityType:'STORY',entityId:story.id,title:`Historia #${story.publicId} creada desde Descubrimiento`,detail:story.title,metadata:{sourceImage:imageInfo}}})]);
   return story;
 }
-module.exports={runDiscovery,candidateToStory,resolveArticleImage};
+module.exports={runDiscovery,candidateToStory,resolveArticleImage,resolveArticleContext};

@@ -28,16 +28,27 @@ function validateText(data){
 function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))}
 function words(text,max=90){const t=String(text||'').trim();return t.length<=max?t:t.slice(0,max-1).replace(/\s+\S*$/,'')+'…'}
 function wrap(text,maxChars=28,maxLines=3){const ws=String(text||'').trim().split(/\s+/), lines=[];let line='';for(const w of ws){const next=(line+' '+w).trim();if(next.length>maxChars&&line){lines.push(line);line=w;if(lines.length===maxLines-1)break}else line=next}if(line&&lines.length<maxLines)lines.push(line);const consumed=lines.join(' ').split(/\s+/).length;if(consumed<ws.length)lines[lines.length-1]=lines[lines.length-1].replace(/[.…]*$/,'')+'…';return lines}
+function fitCaption(text,{width=940,maxLines=4,maxFont=56,minFont=32}={}){
+ const words=String(text||'').trim().split(/\s+/).filter(Boolean);
+ for(let size=maxFont;size>=minFont;size-=2){
+  const limit=Math.max(12,Math.floor(width/(size*.66)));
+  const lines=[];let line='';let impossible=false;
+  for(const word of words){if(word.length>limit){impossible=true;break}const next=line?line+' '+word:word;if(next.length>limit){lines.push(line);line=word}else line=next}
+  if(line)lines.push(line);
+  if(!impossible&&lines.length<=maxLines)return {lines,fontSize:size,lineHeight:Math.round(size*1.12)};
+ }
+ throw new Error('VISUAL_CAPTION_OVERFLOW: El caption completo no cabe en el template; necesita revisión editorial');
+}
 function dataUriToBuffer(v){const m=String(v||'').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/s);return m?Buffer.from(m[1],'base64'):null}
 async function sourceBuffer(value){const local=dataUriToBuffer(value);if(local)return local;if(/^https?:\/\//i.test(value||'')){const r=await fetch(value);if(!r.ok)throw new Error('SOURCE_IMAGE_DOWNLOAD_FAILED');return Buffer.from(await r.arrayBuffer())}throw new Error('SOURCE_IMAGE_INVALID')}
 function neaOverlay({headline,category,summary,source}){
- const lines=wrap(headline,28,3);if(lines.some(x=>x.endsWith('…')))throw new Error('VISUAL_CAPTION_OVERFLOW: caption no cabe en el template');const tspans=lines.map((x,i)=>`<tspan x="70" dy="${i?58:0}">${esc(x)}</tspan>`).join('');
+ const fitted=fitCaption(headline);const tspans=fitted.lines.map((x,i)=>`<tspan x="70" dy="${i?fitted.lineHeight:0}">${esc(x)}</tspan>`).join('');
  return Buffer.from(`<svg width="1080" height="1350" xmlns="http://www.w3.org/2000/svg">
  <rect width="1080" height="1350" fill="${CREAM}"/>
  <rect y="1232" width="1080" height="118" fill="${GREEN}"/>
  <text x="670" y="64" fill="${TERRACOTTA}" font-family="DejaVu Sans" font-size="19" font-weight="700" letter-spacing="1.2">NUEVO LEÓN, SIEMPRE DA TEMA.</text>
  <text x="70" y="725" fill="${INK}" font-family="DejaVu Sans" font-size="22" font-weight="700" letter-spacing=".8">NUEVO LEÓN  |  ${esc(String(category||'ACTUALIDAD').toUpperCase())}</text>
- <text x="70" y="805" fill="${INK}" font-family="DejaVu Serif" font-size="56" font-weight="700">${tspans}</text>
+ <text x="70" y="805" fill="${INK}" font-family="DejaVu Serif" font-size="${fitted.fontSize}" font-weight="700">${tspans}</text>
  <text x="70" y="1122" fill="#394342" font-family="DejaVu Sans" font-size="24">${wrap(summary,76,2).map((line,i)=>`<tspan x="70" dy="${i?32:0}">${esc(line)}</tspan>`).join('')}</text>
  <rect x="70" y="1195" width="54" height="5" fill="${TERRACOTTA}"/>
  <text x="70" y="1220" fill="#5b5b5b" font-family="DejaVu Sans" font-size="15" font-weight="700">FUENTE: ${esc(words(source||'AI Media Network',70))}</text>
@@ -132,4 +143,4 @@ async function renderTemplate(template,data){
  if(template?.renderer==='GENERIC_LAYERED')return renderGenericLayered(template,data);
  throw new Error('TEMPLATE_RENDERER_NOT_SUPPORTED');
 }
-module.exports={selectTemplate,renderTemplate,renderTemplatePreview};
+module.exports={selectTemplate,renderTemplate,renderTemplatePreview,fitCaption};
