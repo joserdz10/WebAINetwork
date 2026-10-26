@@ -32,7 +32,20 @@ async function searchStateSources(stateName){
    body:JSON.stringify({model:process.env.OPENAI_SOURCE_MODEL||process.env.OPENAI_MODEL||'gpt-5-mini',tools:[{type:'web_search',search_context_size:'medium'}],
     instructions:'Investiga sitios web oficiales de medios noticiosos de un estado de México mediante búsqueda web actual. No inventes dominios, evita redes sociales y artículos individuales. Responde solo JSON: {"sources":[{"name":"Medio","url":"https://dominio.tld/","region":"municipio o estatal"}]}. Hasta 18 fuentes, diversas regiones. Las URLs deben ser dominios originales de los medios.',
     input:'Buscar sitios oficiales de medios de noticias regionales y estatales en '+stateName+', México.'})});
-  if(!r.ok)throw new Error('SOURCE_SEARCH_'+r.status);
+  if(!r.ok){
+   let apiError={};try{apiError=await r.json()}catch{}
+   const code=String(apiError.error?.code||apiError.error?.type||'');
+   const quota=/insufficient_quota|billing|payment/i.test(code+' '+String(apiError.error?.message||''));
+   const limit=r.status===429;
+   const err=new Error(quota
+    ?'OpenAI API no tiene cuota disponible. Revisa la facturación y los límites del proyecto en platform.openai.com.'
+    :limit
+     ?'OpenAI API alcanzó su límite temporal de solicitudes. Revisa los límites de uso del proyecto e inténtalo más tarde.'
+     :'OpenAI API rechazó la búsqueda (HTTP '+r.status+'). Revisa el modelo y los permisos de la API.');
+   err.code=quota?'OPENAI_INSUFFICIENT_QUOTA':limit?'OPENAI_RATE_LIMIT':'SOURCE_SEARCH_'+r.status;
+   err.status=quota?429:limit?429:502;
+   throw err;
+  }
   const data=await r.json();
   const text=data.output_text||data.output?.flatMap(o=>o.content||[]).filter(c=>c.type==='output_text').map(c=>c.text).join('\n');
   if(!text)throw new Error('SOURCE_SEARCH_EMPTY');
