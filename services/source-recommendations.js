@@ -17,7 +17,7 @@ const RECOMMENDATIONS = Object.freeze({
 });
 function sourceHost(value){
   if(!value||typeof value!=='string')return null;
-  try{const u=new URL(value.includes('://')?value:'https://'+value);return u.hostname.toLowerCase().replace(/^www\\./,'').replace(/\\.$/,'')||null}catch{return null}
+  try{const u=new URL(value.includes('://')?value:'https://'+value);return u.hostname.toLowerCase().replace(/^www\./,'').replace(/\.$/,'')||null}catch{return null}
 }
 function sourceKey(source){return sourceHost(source.url)||sourceHost(source.domain)}
 function previewSources(stateCode,existing=[]){
