@@ -6,6 +6,7 @@ const {execSync}=require('child_process');
 const {PrismaClient}=require('@prisma/client');
 const {seedDatabase,ensureVisualDefaults}=require('./packages/database/prisma/seed');
 const {STATES,getState}=require('./services/state-catalog');
+const {RECOMMENDATIONS,sourceKey,previewSources}=require('./services/source-recommendations');
 const {runDiscovery,candidateToStory}=require('./services/discovery');
 const {analyzeStory}=require('./services/story-intelligence');
 const {generatePieces,generatePieceImage}=require('./services/content');
@@ -38,7 +39,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.7.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.7.1',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.use('/api',dbGuard);
 
@@ -106,6 +107,35 @@ crudRoutes('topics','topic',(b,s)=>({stateBrainId:s.id,slug:b.slug,name:b.name,d
 crudRoutes('profiles','profile',(b,s)=>({stateBrainId:s.id,slug:b.slug,name:b.name,type:b.type||null,description:b.description||null,aliases:b.aliases||[],metadata:b.metadata||{}}),(b)=>({name:b.name,type:b.type,description:b.description,aliases:b.aliases,metadata:b.metadata}));
 crudRoutes('watches','watch',(b,s)=>({stateBrainId:s.id,name:b.name,type:b.type||'KEYWORD',query:b.query||null,isActive:b.isActive!==false,priority:b.priority||'NORMAL',configuration:b.configuration||{}}),(b)=>({name:b.name,type:b.type,query:b.query,isActive:b.isActive,priority:b.priority,configuration:b.configuration}));
 crudRoutes('sources','source',(b,s)=>({stateBrainId:s.id,name:b.name,type:b.type||'WEBSITE',url:b.url||null,domain:b.domain||null,isActive:b.isActive!==false,trustScore:b.trustScore??null,configuration:b.configuration||{}}),(b)=>({name:b.name,type:b.type,url:b.url,domain:b.domain,isActive:b.isActive,trustScore:b.trustScore,configuration:b.configuration}));
+
+// Importación optativa: nunca sustituye fuentes existentes ni habilita una URL sin revisión.
+app.get('/api/sources/recommendations',async(req,res)=>{try{
+  const code=String(req.query.state||'').toUpperCase();
+  const state=await prisma.stateBrain.findFirst({where:{stateCode:code}});
+  if(!state)return res.status(404).json({ok:false,error:'STATE_NOT_FOUND',message:'Estado no registrado.'});
+  const existing=await prisma.source.findMany({where:{stateBrainId:state.id},select:{name:true,url:true,domain:true}});
+  const items=previewSources(code,existing);
+  res.json({ok:true,data:{stateCode:code,available:items.filter(i=>i.status==='AVAILABLE').length,existing:items.filter(i=>i.status==='EXISTING').length,items}});
+}catch(e){fail(res,e)}});
+app.post('/api/sources/import-recommended',async(req,res)=>{try{
+  const code=String(req.body?.stateCode||'').toUpperCase();
+  if(!RECOMMENDATIONS[code])return res.status(400).json({ok:false,error:'NO_SOURCE_CATALOG',message:'Aún no hay fuentes recomendadas para esta entidad.'});
+  const state=await prisma.stateBrain.findFirst({where:{stateCode:code}});
+  if(!state)return res.status(404).json({ok:false,error:'STATE_NOT_FOUND',message:'Estado no registrado.'});
+  const result=await prisma.$transaction(async tx=>{
+    const existing=await tx.source.findMany({where:{stateBrainId:state.id},select:{url:true,domain:true}});
+    const seen=new Set(existing.map(sourceKey).filter(Boolean));
+    const added=[];let skipped=0;
+    for(const item of RECOMMENDATIONS[code]){
+      const host=sourceKey(item);
+      if(seen.has(host)){skipped++;continue}
+      const created=await tx.source.create({data:{stateBrainId:state.id,name:item.name,url:item.url,domain:host,type:item.type,isActive:false,trustScore:null,configuration:{origin:'RECOMMENDED_CATALOG',region:item.region,verification:'PENDING',importedAt:new Date().toISOString()}}});
+      added.push({id:created.id,name:created.name});seen.add(host);
+    }
+    return {stateCode:code,added,addedCount:added.length,skippedCount:skipped};
+  });
+  res.json({ok:true,data:result});
+}catch(e){fail(res,e)}});
 
 app.get('/api/radar',async(req,res)=>{try{const stateCode=req.query.state||'NL',since=new Date(Date.now()-24*3600000);const topics=await prisma.topic.findMany({where:{stateBrain:{stateCode}},include:{storyLinks:{where:{story:{detectedAt:{gte:since}}},include:{story:true}}}});const watches=await prisma.watch.findMany({where:{stateBrain:{stateCode},isActive:true}});const candidates=await prisma.discoveryCandidate.findMany({where:{discoveryRun:{stateBrain:{stateCode}},createdAt:{gte:since},status:{in:['CANDIDATE','PROMOTED']}},take:200});res.json({ok:true,data:{topics:topics.map(t=>({id:t.id,name:t.name,priority:t.priority,stories24h:t.storyLinks.length})).sort((a,b)=>b.stories24h-a.stories24h),watches,candidateSignals:candidates.slice(0,20)}})}catch(e){fail(res,e)}});
 
