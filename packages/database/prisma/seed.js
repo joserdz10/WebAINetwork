@@ -40,7 +40,7 @@ async function seedDatabase(){
     const active=stateCode==='NL';
     stateMap[stateCode]=await prisma.stateBrain.upsert({
       where:{slug},
-      update:{name,stateCode,status:active?'ACTIVE':'DRAFT',countryId:mx.id},
+      update:{name,stateCode,countryId:mx.id},
       create:{countryId:mx.id,slug,name,stateCode,status:active?'ACTIVE':'DRAFT',description:active?'Cerebro estatal inicial de AI Media Network.':'Cerebro estatal preparado para activación.'}
     });
   }
