@@ -345,7 +345,7 @@ async function resumeMetaOAuth(){
     const d=await api('/api/meta/oauth/result');
     state.metaDiscovery=d;
     await go('integrations');
-    await openMetaConnect();
+    state.identities=await api('/api/identities');
     showMetaDiscoveryResults(d);
   }catch(e){flash('No se completó la conexión con Facebook: '+e.message,'err')}
 }
