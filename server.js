@@ -5,6 +5,7 @@ const path=require('path');
 const {execSync}=require('child_process');
 const {PrismaClient}=require('@prisma/client');
 const {seedDatabase,ensureVisualDefaults}=require('./packages/database/prisma/seed');
+const {STATES,getState}=require('./services/state-catalog');
 const {runDiscovery,candidateToStory}=require('./services/discovery');
 const {analyzeStory}=require('./services/story-intelligence');
 const {generatePieces,generatePieceImage}=require('./services/content');
@@ -37,7 +38,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.6.9',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.7.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.use('/api',dbGuard);
 
@@ -52,8 +53,33 @@ async function getDashboard(stateCode='NL'){
 }
 app.get('/api/dashboard',async(req,res)=>{try{res.json({ok:true,...await getDashboard(req.query.state||'NL')})}catch(e){fail(res,e)}});
 
+app.get('/api/states/catalog',async(_req,res)=>{try{res.json({ok:true,data:STATES.map(([slug,name,stateCode])=>({slug,name,stateCode}))})}catch(e){fail(res,e)}});
 app.get('/api/states',async(_req,res)=>{try{res.json({ok:true,data:await prisma.stateBrain.findMany({include:{_count:{select:{identities:true,sources:true,topics:true,profiles:true,stories:true}}},orderBy:{name:'asc'}})})}catch(e){fail(res,e)}});
-app.patch('/api/states/:id',async(req,res)=>{try{res.json({ok:true,data:await prisma.stateBrain.update({where:{id:req.params.id},data:{status:req.body.status,description:req.body.description,configuration:req.body.configuration}})})}catch(e){fail(res,e)}});
+app.post('/api/states',async(req,res)=>{try{
+  const item=getState(req.body?.stateCode);
+  if(!item)return res.status(400).json({ok:false,error:'INVALID_STATE_CODE',message:'Selecciona una entidad del catálogo nacional.'});
+  const existing=await prisma.stateBrain.findFirst({where:{OR:[{slug:item.slug},{stateCode:item.stateCode}]}});
+  if(existing)return res.status(409).json({ok:false,error:'STATE_ALREADY_EXISTS',message:'El cerebro estatal ya está registrado.'});
+  const country=await prisma.country.upsert({where:{code:'MX'},update:{},create:{code:'MX',name:'México',isActive:true}});
+  const row=await prisma.stateBrain.create({data:{countryId:country.id,slug:item.slug,name:item.name,stateCode:item.stateCode,status:'DRAFT',description:'Cerebro estatal en configuración; sin fuentes ni identidades asignadas.'}});
+  res.status(201).json({ok:true,data:row});
+}catch(e){if(e.code==='P2002')return res.status(409).json({ok:false,error:'STATE_ALREADY_EXISTS',message:'El cerebro estatal ya está registrado.'});fail(res,e)}});
+app.patch('/api/states/:id',async(req,res)=>{try{
+  const row=await prisma.stateBrain.findUnique({where:{id:req.params.id},include:{_count:{select:{identities:true,sources:true}}}});
+  if(!row)return res.status(404).json({ok:false,error:'STATE_NOT_FOUND',message:'Estado no encontrado.'});
+  const body=req.body||{},data={};
+  if(Object.hasOwn(body,'status')){
+    if(!['DRAFT','ACTIVE','PAUSED'].includes(body.status))return res.status(400).json({ok:false,error:'INVALID_STATUS',message:'Estado operativo inválido.'});
+    if(body.status==='ACTIVE'&&(!row._count.identities||!row._count.sources))return res.status(422).json({ok:false,error:'STATE_NOT_READY',message:'Antes de activar, registra al menos una identidad y una fuente.'});
+    data.status=body.status;
+  }
+  if(Object.hasOwn(body,'description')){
+    if(typeof body.description!=='string'||body.description.length>1000)return res.status(400).json({ok:false,error:'INVALID_DESCRIPTION',message:'Descripción inválida.'});
+    data.description=body.description;
+  }
+  if(!Object.keys(data).length)return res.status(400).json({ok:false,error:'NO_VALID_FIELDS',message:'Sin campos válidos para actualizar.'});
+  res.json({ok:true,data:await prisma.stateBrain.update({where:{id:row.id},data})});
+}catch(e){fail(res,e)}});
 
 app.get('/api/identities',async(req,res)=>{try{res.json({ok:true,data:await prisma.mediaIdentity.findMany({where:stateWhere(req.query.state),include:{stateBrain:true,mediaDNA:true,visualDNA:true,templates:{select:templateSelect},socialAccounts:{select:socialAccountSelect}},orderBy:{name:'asc'}})})}catch(e){fail(res,e)}});
 app.post('/api/identities',async(req,res)=>{try{const state=await prisma.stateBrain.findFirst({where:{stateCode:req.body.stateCode||'NL'}});if(!state)return fail(res,new Error('STATE_NOT_FOUND'),404);const d=req.body;const row=await prisma.mediaIdentity.create({data:{stateBrainId:state.id,slug:d.slug,name:d.name,code:d.code||null,status:d.status||'DRAFT',description:d.description||null}});res.status(201).json({ok:true,data:row})}catch(e){fail(res,e)}});
