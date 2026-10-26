@@ -8,6 +8,7 @@ const {seedDatabase,ensureVisualDefaults}=require('./packages/database/prisma/se
 const {STATES,getState}=require('./services/state-catalog');
 const {RECOMMENDATIONS,sourceKey,previewSources}=require('./services/source-recommendations');
 const {discoverStateSources}=require('./services/source-auto-discovery');
+const {specializedSearch}=require('./services/specialized-search');
 const {runDiscovery,candidateToStory}=require('./services/discovery');
 const {analyzeStory}=require('./services/story-intelligence');
 const {generatePieces,generatePieceImage}=require('./services/content');
@@ -40,7 +41,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.8.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.9.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.use('/api',dbGuard);
 
@@ -163,6 +164,10 @@ app.get('/api/news',async(req,res)=>{try{
  res.json({ok:true,data:items});
 }catch(e){fail(res,e)}});
 app.post('/api/discovery/run',async(req,res)=>{try{res.status(201).json({ok:true,data:await runDiscovery(prisma,req.body?.stateCode||'NL',{hours:req.body?.hours,threshold:req.body?.threshold})})}catch(e){fail(res,e)}});
+app.post('/api/discovery/specialized',async(req,res)=>{try{
+ const result=await specializedSearch(prisma,req.body||{});
+ res.json({ok:true,data:result});
+}catch(e){fail(res,e,e.status||500)}});
 app.get('/api/discovery/candidates',async(req,res)=>{try{const where={discoveryRun:{stateBrain:{stateCode:req.query.state||'NL'}}};if(req.query.status)where.status=req.query.status;res.json({ok:true,data:await prisma.discoveryCandidate.findMany({where,include:{source:true,discoveryRun:true,story:true},orderBy:[{relevanceScore:'desc'},{createdAt:'desc'}],take:250})})}catch(e){fail(res,e)}});
 app.post('/api/discovery/candidates/:id/promote',async(req,res)=>{try{res.status(201).json({ok:true,data:await candidateToStory(prisma,req.params.id)})}catch(e){fail(res,e)}});
 app.post('/api/discovery/candidates/:id/discard',async(req,res)=>{try{const c=await prisma.discoveryCandidate.update({where:{id:req.params.id},data:{status:'DISCARDED',decisionReason:req.body?.reason||'Descartado por operador'}});await prisma.activityEvent.create({data:{type:'CANDIDATE_DISCARDED',entityType:'DISCOVERY_CANDIDATE',entityId:c.id,title:'Candidato descartado',detail:c.title}});res.json({ok:true,data:c})}catch(e){fail(res,e)}});
