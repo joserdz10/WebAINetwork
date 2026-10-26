@@ -44,7 +44,7 @@ async function specializedSearch(prisma,input,{searchWeb=webLookup}={}){
   include:{source:true,discoveryRun:{include:{stateBrain:{select:{name:true,stateCode:true}}}}},orderBy:{createdAt:'desc'},take:500
  });
  const matched=local.filter(x=>matchText(x,opt.query)).slice(0,100);
- const results=matched.map(x=>({id:x.id,title:x.title,url:x.url,excerpt:x.excerpt||'',origin:'LOCAL',status:x.status,sourceName:x.source?.name||new URL(x.url).hostname,stateCode:x.discoveryRun.stateBrain.stateCode,publishedAt:x.publishedAt,score:x.relevanceScore}));
+ const results=matched.map(x=>({id:x.id,title:x.title,url:x.url,excerpt:x.excerpt||'',origin:'LOCAL',status:x.status,sourceName:x.source?.name||(function(){try{return new URL(x.url).hostname}catch{return 'Fuente no identificada'}})(),stateCode:x.discoveryRun.stateBrain.stateCode,publishedAt:x.publishedAt,score:x.relevanceScore}));
  let webError=null,webCount=0;
  if(opt.web){
   try{
