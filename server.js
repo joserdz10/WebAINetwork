@@ -138,10 +138,17 @@ app.post('/api/sources/import-recommended',async(req,res)=>{try{
   res.json({ok:true,data:result});
 }catch(e){fail(res,e)}});
 
+const autoSourceRuns=new Map();
 app.post('/api/sources/auto-discover',async(req,res)=>{try{
  const code=String(req.body?.stateCode||'').toUpperCase();
  if(!getState(code))return res.status(400).json({ok:false,error:'INVALID_STATE',message:'Entidad federativa no válida.'});
  if(!process.env.OPENAI_API_KEY)return res.status(503).json({ok:false,error:'AI_NOT_CONFIGURED',message:'Configura OPENAI_API_KEY para investigar fuentes con búsqueda web.'});
+ const last=autoSourceRuns.get(code)||0;
+ if(Date.now()-last<3600000)return res.status(429).json({ok:false,error:'SOURCE_DISCOVERY_COOLDOWN',message:'Se permite una búsqueda por estado cada hora.'});
+ const day=new Date().toISOString().slice(0,10);
+ const todays=[...autoSourceRuns.values()].filter(x=>new Date(x).toISOString().slice(0,10)===day).length;
+ if(todays>=6)return res.status(429).json({ok:false,error:'SOURCE_DISCOVERY_DAILY_LIMIT',message:'Límite de 6 búsquedas por día alcanzado.'});
+ autoSourceRuns.set(code,Date.now());
  const result=await discoverStateSources(prisma,code);
  res.json({ok:true,data:result});
 }catch(e){fail(res,e)}});
