@@ -25,7 +25,7 @@ function start(req,res){
     url.searchParams.set('redirect_uri',redirectUri());
     url.searchParams.set('response_type','code');
     url.searchParams.set('state',state);
-    url.searchParams.set('scope','pages_show_list,pages_read_engagement,pages_manage_posts');
+    url.searchParams.set('scope','pages_show_list,pages_read_engagement,pages_manage_posts,business_management');
     res.json({ok:true,data:{url:url.toString()}});
   }catch(e){res.status(400).json({ok:false,message:e.message})}
 }
