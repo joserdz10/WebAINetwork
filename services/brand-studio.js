@@ -17,13 +17,24 @@ function paletteFor(value={}){
  return {primary:color(p.primary,'#13213B'),secondary:color(p.secondary,'#1672D3'),accent:color(p.accent,'#22B8CF'),background:color(p.background,'#F6F8FB'),text:color(p.text,'#13213B')};
 }
 function svg(width,height,content){return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${content}</svg>`)}
+function brandLines(name,maxChars=31){
+ const words=cleanName(name).split(' '),lines=[];let line='';
+ for(const word of words){
+  if(word.length>maxChars)throw new Error('BRAND_NAME_UNBROKEN_WORD_TOO_LONG');
+  if((line?line.length+1:0)+word.length>maxChars){lines.push(line);line=word}
+  else line+=(line?' ':'')+word;
+ }
+ if(line)lines.push(line);
+ if(lines.length>2)throw new Error('BRAND_NAME_TOO_LONG_FOR_HEADER');
+ return lines;
+}
 function brandHeader({width,height,name,palette,kind}){
- const short=name.length>38?name.slice(0,38).trim()+'…':name;
- const font=Math.min(kind==='wide'?64:49,Math.max(28,Math.floor((width-215)/(short.length*.63))));
+ const lines=brandLines(name,31),font=lines.length===1?40:30;
+ const startY=lines.length===1?91:72;
  return `<rect x="0" y="0" width="${width}" height="${kind==='wide'?140:150}" fill="${palette.primary}"/><rect x="0" y="${kind==='wide'?132:142}" width="${width}" height="8" fill="${palette.accent}"/>
  <rect x="55" y="36" rx="17" width="76" height="76" fill="${palette.accent}"/>
  <text x="93" y="90" font-family="DejaVu Sans" font-size="34" font-weight="700" fill="${palette.primary}" text-anchor="middle">${escapeXml(initials(name))}</text>
- <text x="160" y="91" font-family="DejaVu Sans" font-size="${font}" font-weight="700" fill="#ffffff">${escapeXml(short)}</text>`;
+ ${lines.map((line,i)=>`<text x="160" y="${startY+i*36}" font-family="DejaVu Sans" font-size="${font}" font-weight="700" fill="#ffffff">${escapeXml(line)}</text>`).join('')}`;
 }
 function layout(kind,width,height){
  const margin=60;
@@ -47,9 +58,9 @@ async function backgroundFor({name,palette,kind,width,height}){
  return sharp(buffer).png().toBuffer();
 }
 function brandImageSvg({name,palette,variant}){
- const p=palette,abbr=initials(name),label=name.length>42?name.slice(0,42)+'…':name;
+ const p=palette,abbr=initials(name),lines=brandLines(name,31);
  if(variant==='profile')return svg(1024,1024,`<rect width="1024" height="1024" rx="185" fill="${p.primary}"/><circle cx="512" cy="490" r="327" fill="${p.secondary}" opacity=".45"/><rect x="230" y="250" width="564" height="450" rx="95" fill="${p.accent}"/><text x="512" y="570" text-anchor="middle" fill="${p.primary}" font-family="DejaVu Sans" font-weight="700" font-size="${abbr.length===1?350:260}">${escapeXml(abbr)}</text><rect x="300" y="767" width="424" height="13" rx="6" fill="${p.accent}"/>`);
- return svg(1640,624,`<rect width="1640" height="624" fill="${p.primary}"/><rect x="0" y="570" width="1640" height="54" fill="${p.accent}"/><circle cx="255" cy="305" r="195" fill="${p.secondary}" opacity=".55"/><text x="255" y="375" text-anchor="middle" font-family="DejaVu Sans" fill="#ffffff" font-size="174" font-weight="700">${escapeXml(abbr)}</text><text x="505" y="305" font-family="DejaVu Sans" font-size="${Math.max(45,Math.floor(950/(label.length*.65)))}" font-weight="700" fill="#ffffff">${escapeXml(label)}</text><text x="510" y="389" font-family="DejaVu Sans" font-size="32" fill="${p.accent}">INFORMACIÓN VERIFICABLE</text>`);
+ return svg(1640,624,`<rect width="1640" height="624" fill="${p.primary}"/><rect x="0" y="570" width="1640" height="54" fill="${p.accent}"/><circle cx="255" cy="305" r="195" fill="${p.secondary}" opacity=".55"/><text x="255" y="375" text-anchor="middle" font-family="DejaVu Sans" fill="#ffffff" font-size="174" font-weight="700">${escapeXml(abbr)}</text>${lines.map((line,i)=>`<text x="505" y="${lines.length===1?305:270+i*65}" font-family="DejaVu Sans" font-size="44" font-weight="700" fill="#ffffff">${escapeXml(line)}</text>`).join('')}<text x="510" y="435" font-family="DejaVu Sans" font-size="32" fill="${p.accent}">INFORMACIÓN VERIFICABLE</text>`);
 }
 async function brandImage(data,variant){return sharp(brandImageSvg({...data,variant})).png().toBuffer()}
 async function design({name,existingPalette={},focus='' }){
