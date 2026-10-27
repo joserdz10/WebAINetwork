@@ -10,6 +10,22 @@ async function graphGet(path,accessToken,params={}){
   const u=new URL(`${base()}/${path}`);for(const[k,v]of Object.entries(params))if(v!=null)u.searchParams.set(k,String(v));u.searchParams.set('access_token',accessToken);
   const r=await fetch(u);const body=await r.text();if(!r.ok)throw parseMetaError(body,r.status);return body?JSON.parse(body):{};
 }
+// Follow Meta cursors without trusting an externally supplied paging URL or exposing tokens.
+async function graphGetAll(path,accessToken,params={},maxPages=30){
+  const rows=[],seen=new Set();let after=null,pageCount=0,truncated=false;
+  do{
+    const result=await graphGet(path,accessToken,{...params,...(after?{after}:{})});
+    rows.push(...(Array.isArray(result.data)?result.data:[]));
+    pageCount++;
+    const cursor=result.paging?.cursors?.after||null;
+    const hasNext=Boolean(result.paging?.next);
+    if(!hasNext||!cursor){truncated=Boolean(hasNext&&!cursor);break}
+    if(seen.has(cursor)){truncated=true;break}
+    seen.add(cursor);after=cursor;
+    if(pageCount>=maxPages){truncated=true;break}
+  }while(after);
+  return{data:rows,pageCount,truncated};
+}
 async function graphPost(path,accessToken,params={}){
   const r=await fetch(`${base()}/${path}`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({...params,access_token:accessToken})});
   const body=await r.text();if(!r.ok)throw parseMetaError(body,r.status);return body?JSON.parse(body):{};
@@ -25,12 +41,13 @@ async function discoverMetaPages(accessToken){
   const [me,perm,pages]=await Promise.all([
     graphGet('me',accessToken,{fields:'id,name'}),
     graphGet('me/permissions',accessToken),
-    graphGet('me/accounts',accessToken,{fields:'id,name,access_token,tasks,instagram_business_account{id,username,name,profile_picture_url}',limit:200})
+    graphGetAll('me/accounts',accessToken,{fields:'id,name,access_token,tasks,instagram_business_account{id,username,name,profile_picture_url}',limit:100})
   ]);
   const permissions=permissionsSummary(perm.data||[]);
   const requiredPermissions=['pages_show_list','pages_read_engagement','pages_manage_posts'];
   const missingPermissions=requiredPermissions.filter(x=>!permissions.granted.includes(x));
-  return{user:me,permissions,requiredPermissions,missingPermissions,pages:(pages.data||[]).map(p=>({id:p.id,name:p.name,tasks:p.tasks||[],instagram:p.instagram_business_account||null,connectable:Boolean(p.access_token),ticket:p.access_token?encryptTicket({pageId:p.id,pageName:p.name,pageAccessToken:p.access_token,tasks:p.tasks||[],instagram:p.instagram_business_account||null,permissions}):null}))};
+  const distinct=[...new Map((pages.data||[]).map(p=>[String(p.id),p])).values()];
+  return{user:me,permissions,requiredPermissions,missingPermissions,discovery:{returned:distinct.length,pageCount:pages.pageCount,truncated:pages.truncated,explanation:'Solo se muestran las páginas devueltas por Meta para esta persona y estos permisos. Si faltan páginas, comprueba acceso a la página y autorización de la app.'},pages:distinct.map(p=>({id:p.id,name:p.name,tasks:p.tasks||[],instagram:p.instagram_business_account||null,connectable:Boolean(p.access_token),ticket:p.access_token?encryptTicket({pageId:p.id,pageName:p.name,pageAccessToken:p.access_token,tasks:p.tasks||[],instagram:p.instagram_business_account||null,permissions}):null}))};
 }
 
 async function inspectPageAccessToken(accessToken){
