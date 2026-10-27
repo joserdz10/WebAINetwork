@@ -16,6 +16,15 @@ function paletteFor(value={}){
  const p=value||{};
  return {primary:color(p.primary,'#13213B'),secondary:color(p.secondary,'#1672D3'),accent:color(p.accent,'#22B8CF'),background:color(p.background,'#F6F8FB'),text:color(p.text,'#13213B')};
 }
+function luminance(hex){
+ const rgb=[1,3,5].map(x=>parseInt(hex.slice(x,x+2),16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
+ return .2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];
+}
+function contrast(a,b){const x=luminance(a),y=luminance(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
+function assertBrandContrast(p){
+ if(contrast(p.text,p.background)<4.5)throw new Error('BRAND_CONTRAST_INVALID: texto y fondo requieren contraste de al menos 4.5:1');
+ if(contrast('#FFFFFF',p.primary)<4.5)throw new Error('BRAND_CONTRAST_INVALID: el color principal debe contrastar con los textos blancos de la cabecera');
+}
 function svg(width,height,content){return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${content}</svg>`)}
 function brandLines(name,maxChars=31){
  const words=cleanName(name).split(' '),lines=[];let line='';
@@ -70,7 +79,8 @@ async function design({name,existingPalette={},focus='' }){
  return{name:cleaned,palette:paletteFor({...defaults,...response}),style:String(response.style).slice(0,160),generatedBy:'AI',notice:'Identidad gráfica propuesta; el logo tipográfico y los fondos se construyen de modo reproducible.'};
 }
 async function buildTemplates({identityId,name,palette,revision}){
- // Validate both permanent brand assets before any template can become active.
+ // Validate contrast and both permanent brand assets before any template can become active.
+ assertBrandContrast(palette);
  await brandImage({name,palette},'profile');
  await brandImage({name,palette},'cover');
  const definitions=[];
