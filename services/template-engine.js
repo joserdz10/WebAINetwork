@@ -77,9 +77,18 @@ function textSvg(width,height,layerMap,data){
   const values={HEADLINE:data.headline,CATEGORY:data.category,SUMMARY:data.summary,SOURCE:data.source};
   for(const [field,value] of Object.entries(values)){
     const m=layerMap?.[field]; if(!m||!value) continue;
-    const size=Number(m.fontSize||24), lineHeight=Math.round(size*1.15), maxLines=Number(m.maxLines||1);
-    const chars=Math.max(8,Math.floor(Number(m.width||300)/(size*.56)));
-    const lines=wrap(value,chars,maxLines);if(lines.some(x=>x.endsWith('…')))throw new Error(`VISUAL_TEXT_OVERFLOW_${field}: ajuste el caption o el mapa de plantilla`);
+    let size=Number(m.fontSize||24), maxLines=Number(m.maxLines||1);
+    const allowedHeight=Number(m.height||size*1.2);
+    let lines=[],valid=false;
+    for(let trial=size;trial>=Math.max(13,Math.round(size*.56));trial-=2){
+      const chars=Math.max(8,Math.floor(Number(m.width||300)/(trial*.59)));
+      const candidate=wrap(value,chars,maxLines);
+      if(candidate.some(x=>x.endsWith('…')))continue;
+      if(candidate.length*Math.round(trial*1.15)>allowedHeight)continue;
+      size=trial;lines=candidate;valid=true;break;
+    }
+    if(!valid)throw new Error(`VISUAL_TEXT_OVERFLOW_${field}: el texto no cabe completo; acórtalo antes de publicar`);
+    const lineHeight=Math.round(size*1.15);
     const x=Number(m.x??m.left??0), y=Number(m.y??m.top??0)+size;
     const anchor=m.align==='center'?'middle':m.align==='right'?'end':'start';
     const tx=m.align==='center'?x+Number(m.width||0)/2:m.align==='right'?x+Number(m.width||0):x;
