@@ -46,8 +46,69 @@ async function discoverMetaPages(accessToken){
   const permissions=permissionsSummary(perm.data||[]);
   const requiredPermissions=['pages_show_list','pages_read_engagement','pages_manage_posts'];
   const missingPermissions=requiredPermissions.filter(x=>!permissions.granted.includes(x));
-  const distinct=[...new Map((pages.data||[]).map(p=>[String(p.id),p])).values()];
-  return{user:me,permissions,requiredPermissions,missingPermissions,discovery:{returned:distinct.length,pageCount:pages.pageCount,truncated:pages.truncated,explanation:'Solo se muestran las páginas devueltas por Meta para esta persona y estos permisos. Si faltan páginas, comprueba acceso a la página y autorización de la app.'},pages:distinct.map(p=>({id:p.id,name:p.name,tasks:p.tasks||[],instagram:p.instagram_business_account||null,connectable:Boolean(p.access_token),ticket:p.access_token?encryptTicket({pageId:p.id,pageName:p.name,pageAccessToken:p.access_token,tasks:p.tasks||[],instagram:p.instagram_business_account||null,permissions}):null}))};
+  const byId=new Map();
+  for(const page of pages.data||[])byId.set(String(page.id),{...page,portfolioIds:[],source:'PERSONAL_ACCESS'});
+  const businesses=[],warnings=[];
+  let businessQueries=0,businessTruncated=false;
+  if(permissions.granted.includes('business_management')){
+    try{
+      const portfolios=await graphGetAll('me/businesses',accessToken,{fields:'id,name',limit:100});
+      businessQueries+=portfolios.pageCount;businessTruncated=portfolios.truncated;
+      for(const business of portfolios.data||[]){
+        const record={id:String(business.id),name:business.name||'Portafolio comercial',pages:0,errors:[]};
+        businesses.push(record);
+        for(const edge of ['owned_pages','client_pages']){
+          try{
+            const data=await graphGetAll(`${business.id}/${edge}`,accessToken,{fields:'id,name',limit:100});
+            businessQueries+=data.pageCount;
+            businessTruncated ||= data.truncated;
+            for(const page of data.data||[]){
+              if(!page?.id)continue;
+              const id=String(page.id),existing=byId.get(id);
+              if(existing){
+                if(!existing.portfolioIds.includes(record.id))existing.portfolioIds.push(record.id);
+              }else{
+                byId.set(id,{id,name:page.name||'Página comercial',tasks:[],portfolioIds:[record.id],source:'BUSINESS_DISCOVERY',access_token:null});
+              }
+              record.pages++;
+            }
+          }catch(error){
+            // An inaccessible edge must not hide pages from other portfolios.
+            record.errors.push(edge);
+            warnings.push(`No se pudo consultar ${edge} del portafolio ${record.name}.`);
+          }
+        }
+      }
+    }catch(error){
+      warnings.push('Meta no permitió consultar los portafolios de esta cuenta. Verifica business_management y tu acceso a los negocios.');
+    }
+  }else{
+    warnings.push('business_management no fue concedido: solamente se consultaron las páginas de /me/accounts.');
+  }
+  // Business discovery may enumerate a page without permission to publish.
+  // Only issue a connection ticket if Meta returned an actual Page access token.
+  const discovered=[...byId.values()];
+  return{
+    user:me,permissions,requiredPermissions,missingPermissions,
+    businesses,warnings,
+    discovery:{
+      returned:discovered.length,
+      connectable:discovered.filter(p=>Boolean(p.access_token)).length,
+      businessOnly:discovered.filter(p=>!p.access_token).length,
+      portfolioCount:businesses.length,
+      pageCount:pages.pageCount+businessQueries,
+      truncated:pages.truncated||businessTruncated,
+      explanation:'Las páginas de portafolios sin token de página se muestran para diagnóstico, pero no pueden conectarse ni publicar hasta obtener acceso autorizado.'
+    },
+    pages:discovered.map(p=>({
+      id:p.id,name:p.name,tasks:p.tasks||[],
+      portfolioIds:p.portfolioIds||[],source:p.source,
+      instagram:p.instagram_business_account||null,
+      connectable:Boolean(p.access_token),
+      reason:p.access_token?null:'Esta página se encontró en un portafolio, pero Meta no devolvió un token de página autorizado para publicar.',
+      ticket:p.access_token?encryptTicket({pageId:p.id,pageName:p.name,pageAccessToken:p.access_token,tasks:p.tasks||[],instagram:p.instagram_business_account||null,permissions}):null
+    }))
+  };
 }
 
 async function inspectPageAccessToken(accessToken){
