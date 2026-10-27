@@ -162,7 +162,8 @@ async function openIdentityStudio(){
 }
 function identityStudioAccountChanged(){
  const a=state.identityStudioAccounts?.find(x=>x.id===val('is-account'));if(!a)return;
- const name=document.getElementById('is-name');if(name)name.value=a.name;
+ const name=document.getElementById('is-name');if(name)name.value=a.mediaIdentity?.name||a.name;
+ const selectedState=document.getElementById('is-state');if(selectedState&&a.mediaIdentity?.stateBrain?.stateCode)selectedState.value=a.mediaIdentity.stateBrain.stateCode;
  const info=document.getElementById('is-account-current');
  if(info)info.textContent='Identidad actual: '+(a.mediaIdentity?.name||'Sin identidad')+' · '+(a.mediaIdentity?.stateBrain?.name||'Sin estado')+'. Crear una nueva identidad transferirá la conexión de Facebook; no modificará el ADN de la anterior.';
  identityStudioProposal=null;const target=document.getElementById('is-proposal');if(target)target.innerHTML='';
@@ -174,21 +175,22 @@ async function generateIdentityStudioProposal(){
   const p=await api('/api/identity-studio/propose',{method:'POST',body:JSON.stringify(b)});
   identityStudioProposal=p;
   const target=document.getElementById('is-proposal');
-  target.innerHTML=`<div class="card" style="margin-top:14px"><h3>Propuesta editorial y visual</h3><p class="muted mini">${esc(p.notice||'Revisa todos los campos antes de guardar.')}</p><div class="field"><label>Descripción</label><textarea id="is-desc">${esc(p.description)}</textarea></div><div class="form-grid"><div class="field"><label>Tono</label><input id="is-tone" value="${esc(p.editorial.tone)}"></div><div class="field"><label>Estilo editorial</label><input id="is-style" value="${esc(p.editorial.editorialStyle)}"></div><div class="field"><label>Enfoque geográfico</label><input id="is-geo" value="${esc(p.editorial.geographicFocus)}"></div><div class="field"><label>Titulares</label><input id="is-head" value="${esc(p.editorial.headlineStyle)}"></div></div><div class="field"><label>Instrucciones editoriales</label><textarea id="is-prompt">${esc(p.editorial.promptInstructions)}</textarea></div><div class="field"><label>ADN visual: colores (JSON)</label><textarea id="is-palette">${esc(JSON.stringify(p.visual.palette,null,2))}</textarea></div><div class="form-grid"><div class="field"><label>Composición</label><input id="is-layout" value="${esc(p.visual.layoutStyle)}"></div><div class="field"><label>Fotografía</label><input id="is-photo" value="${esc(p.visual.photoTreatment)}"></div></div><label class="template-toggle"><input id="is-transfer" type="checkbox"> Confirmo que esta página cambiará de identidad editorial, manteniendo su conexión existente.</label><div style="margin-top:12px"><button type="button" class="cta" onclick="applyIdentityStudioProposal()">Aprobar y crear identidad en borrador</button></div></div>`;
+  target.innerHTML=`<div class="card" style="margin-top:14px"><h3>Propuesta editorial y visual</h3><p class="muted mini">${esc(p.notice||'Revisa todos los campos antes de guardar.')}</p><div class="field"><label>Descripción</label><textarea id="is-desc">${esc(p.description)}</textarea></div><div class="form-grid"><div class="field"><label>Tono</label><input id="is-tone" value="${esc(p.editorial.tone)}"></div><div class="field"><label>Estilo editorial</label><input id="is-style" value="${esc(p.editorial.editorialStyle)}"></div><div class="field"><label>Enfoque geográfico</label><input id="is-geo" value="${esc(p.editorial.geographicFocus)}"></div><div class="field"><label>Titulares</label><input id="is-head" value="${esc(p.editorial.headlineStyle)}"></div></div><div class="field"><label>Instrucciones editoriales</label><textarea id="is-prompt">${esc(p.editorial.promptInstructions)}</textarea></div><div class="field"><label>ADN visual: colores (JSON)</label><textarea id="is-palette">${esc(JSON.stringify(p.visual.palette,null,2))}</textarea></div><div class="form-grid"><div class="field"><label>Composición</label><input id="is-layout" value="${esc(p.visual.layoutStyle)}"></div><div class="field"><label>Fotografía</label><input id="is-photo" value="${esc(p.visual.photoTreatment)}"></div></div><label class="template-toggle"><input id="is-transfer" type="checkbox"> Confirmo actualizar el ADN de la identidad actual o trasladar la conexión si creo una nueva.</label><div style="margin-top:12px"><button type="button" class="cta" onclick="applyIdentityStudioProposal()">Aprobar y guardar identidad</button></div></div>`;
  }catch(e){flash(e.message,'err')}
 }
 async function applyIdentityStudioProposal(){
  try{
   const p=identityStudioProposal;if(!p)return flash('Primero genera una propuesta.','err');
   const existing=state.identityStudioAccounts?.find(x=>x.id===p.accountId);
-  if(!document.getElementById('is-transfer')?.checked)return flash('Confirma la vinculación y el traslado de la página.','err');
-  if(!confirm('¿Crear nueva identidad en borrador para '+p.name+' y trasladar su conexión desde '+(existing?.mediaIdentity?.name||'la identidad actual')+'? No se publicará nada.'))return;
+  const updateExisting=Boolean(existing?.mediaIdentity?.name===p.name&&existing?.mediaIdentity?.stateBrain?.stateCode===p.stateCode);
+  if(!document.getElementById('is-transfer')?.checked)return flash('Confirma la operación antes de guardar.','err');
+  if(!confirm(updateExisting?'¿Actualizar el ADN editorial y visual de la identidad existente '+p.name+'?':'¿Crear nueva identidad en borrador para '+p.name+' y trasladar su conexión desde '+(existing?.mediaIdentity?.name||'la identidad actual')+'? No se publicará nada.'))return;
   let palette;try{palette=JSON.parse(val('is-palette'))}catch{throw new Error('La paleta debe ser un JSON válido.')}
   if(!palette||Array.isArray(palette)||typeof palette!=='object')throw new Error('Paleta inválida.');
   const editorial={...p.editorial,tone:val('is-tone'),editorialStyle:val('is-style'),geographicFocus:val('is-geo'),headlineStyle:val('is-head'),promptInstructions:val('is-prompt')};
   const visual={...p.visual,palette,layoutStyle:val('is-layout'),photoTreatment:val('is-photo')};
-  await api('/api/identity-studio/apply',{method:'POST',body:JSON.stringify({accountId:p.accountId,stateCode:p.stateCode,name:p.name,description:val('is-desc'),editorial,visual,confirm:true,transferAccount:true})});
-  document.querySelector('#modal').close();state.bootstrap=null;flash('Nueva identidad creada en borrador y página vinculada.');go('identities');
+  await api('/api/identity-studio/apply',{method:'POST',body:JSON.stringify({accountId:p.accountId,stateCode:p.stateCode,name:p.name,description:val('is-desc'),editorial,visual,confirm:true,transferAccount:!updateExisting,updateExisting})});
+  document.querySelector('#modal').close();state.bootstrap=null;flash(updateExisting?'ADN editorial y visual actualizado.':'Nueva identidad creada en borrador y página vinculada.');go('identities');
  }catch(e){flash(e.message,'err')}
 }
 async function newIdentity(){modal('Nueva identidad',`<div class="form-grid"><div class="field"><label>Nombre</label><input id="i-name"></div><div class="field"><label>Código</label><input id="i-code"></div><div class="field"><label>Slug</label><input id="i-slug"></div><div class="field"><label>Descripción</label><input id="i-desc"></div></div><button class="cta" onclick="saveIdentity()">Crear identidad</button>`)}
