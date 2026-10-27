@@ -12,7 +12,7 @@
     "db:seed": "node packages/database/prisma/seed.js",
     "test:editorial": "node --test tests/editorial-clean.test.js",
     "test:render": "node --test tests/template-render.test.js",
-    "check": "node --check server.js && node --check services/discovery.js && node --check services/specialized-search.js && node --check services/ai.js && node --check services/story-intelligence.js && node --check services/content.js && node --check services/publication.js && node --check services/secret-vault.js && node --check services/integrations/meta.js && node --check public/app.js",
+    "check": "node --check server.js && node --check services/discovery.js && node --check services/specialized-search.js && node --check services/ai.js && node --check services/story-intelligence.js && node --check services/content.js && node --check services/publication.js && node --check services/secret-vault.js && node --check services/integrations/meta.js && node --check services/integrations/meta-oauth.js && node --check public/app.js",
     "test:visual": "node --test tests/visual-policy.test.js",
     "test:quality": "node --test tests/editorial-quality.test.js"
   },
