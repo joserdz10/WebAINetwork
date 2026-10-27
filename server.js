@@ -123,7 +123,15 @@ app.post('/api/identity-studio/apply',async(req,res)=>{try{
   // Avoid overwriting editorial/visual DNA of an existing identity.
   // A Facebook page already linked to another identity requires explicit transfer confirmation.
   if(account.mediaIdentity?.name===name && account.mediaIdentity.stateBrainId===destination.id){
-    return res.json({ok:true,data:{identityId:account.mediaIdentity.id,reused:true,connected:true,message:'Esta página ya tiene una identidad; no se modificó su ADN.'}});
+    if(b.updateExisting!==true)return res.json({ok:true,data:{identityId:account.mediaIdentity.id,reused:true,connected:true,message:'Identidad existente conservada sin cambios.'}});
+    const existingId=account.mediaIdentity.id;
+    await prisma.$transaction(async tx=>{
+      await tx.mediaDNA.upsert({where:{mediaIdentityId:existingId},create:{mediaIdentityId:existingId,...pick(b.editorial,allowedEditorial)},update:pick(b.editorial,allowedEditorial)});
+      await tx.visualDNA.upsert({where:{mediaIdentityId:existingId},create:{mediaIdentityId:existingId,...pick(b.visual,allowedVisual)},update:pick(b.visual,allowedVisual)});
+      await tx.mediaIdentity.update({where:{id:existingId},data:{description:String(b.description).slice(0,750)}});
+      await tx.activityEvent.create({data:{type:'IDENTITY_UPDATED',entityType:'MEDIA_IDENTITY',entityId:existingId,title:'ADN actualizado desde Identity Studio',detail:name}});
+    });
+    return res.json({ok:true,data:{identityId:existingId,reused:true,connected:true,updated:true}});
   }
   if(!b.transferAccount)return fail(res,new Error('TRANSFER_CONFIRMATION_REQUIRED'),409);
   const slugBase=slugify(name),suffix=String(account.externalAccountId||account.id).replace(/[^a-z0-9]/gi,'').slice(-10).toLowerCase();
