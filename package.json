@@ -14,7 +14,8 @@
     "test:render": "node --test tests/template-render.test.js",
     "check": "node --check server.js && node --check services/discovery.js && node --check services/specialized-search.js && node --check services/ai.js && node --check services/story-intelligence.js && node --check services/content.js && node --check services/publication.js && node --check services/secret-vault.js && node --check services/integrations/meta.js && node --check services/integrations/meta-oauth.js && node --check services/identity-studio.js && node --check services/brand-studio.js && node --check services/template-engine.js && node --check public/app.js",
     "test:visual": "node --test tests/visual-policy.test.js",
-    "test:quality": "node --test tests/editorial-quality.test.js"
+    "test:quality": "node --test tests/editorial-quality.test.js",
+    "test:brand": "node --test tests/brand-studio.test.js"
   },
   "dependencies": {
     "@prisma/client": "6.16.2",
