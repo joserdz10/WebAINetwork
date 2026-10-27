@@ -1,0 +1,29 @@
+name: AI Brand Studio validation
+on:
+  pull_request:
+    paths:
+      - 'services/brand-studio.js'
+      - 'services/template-engine.js'
+      - 'tests/brand-studio.test.js'
+      - 'server.js'
+      - 'public/app.js'
+      - 'package.json'
+  workflow_dispatch:
+jobs:
+  brand-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+      - name: Verify required fonts
+        run: |
+          fc-match 'DejaVu Sans'
+          fc-match 'DejaVu Serif'
+      - name: Syntax validation
+        run: npm run check
+      - name: Brand Studio rendering regression
+        run: npm run test:brand
