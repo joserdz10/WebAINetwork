@@ -170,6 +170,20 @@ app.get('/api/identities/:id/brand/:asset',async(req,res)=>{try{
  const buffer=await brandImage({name:identity.name,palette:paletteFor(identity.visualDNA?.palette||{})},req.params.asset==='profile.png'?'profile':'cover');
  res.setHeader('Content-Type','image/png');res.setHeader('Cache-Control','public,max-age=300');res.end(buffer);
 }catch(e){fail(res,e)}});
+app.post('/api/identities/:id/brand/preview',async(req,res)=>{try{
+ const identity=await prisma.mediaIdentity.findUnique({where:{id:req.params.id}});
+ if(!identity)return fail(res,new Error('IDENTITY_NOT_FOUND'),404);
+ const palette=paletteFor(req.body?.palette||{});
+ const templates=await buildTemplates({identityId:identity.id,name:identity.name,palette,revision:1});
+ const results=[];
+ for(const template of templates){
+   const preview=await renderTemplatePreview(template,{headline:'Autoridades presentan nuevas medidas para mejorar los servicios públicos de la región',summary:'Información verificada y contextualizada con la fuente original de la noticia.',source:'Fuente de prueba'});
+   const thumb=await require('sharp')(preview).resize({width:360,withoutEnlargement:true}).png().toBuffer();
+   results.push({format:template.format,width:template.width,height:template.height,preview:'data:image/png;base64,'+thumb.toString('base64')});
+ }
+ res.setHeader('Cache-Control','no-store');
+ res.json({ok:true,data:{formats:results,validated:true}});
+}catch(e){fail(res,e,422)}});
 app.post('/api/identities/:id/brand/activate',async(req,res)=>{try{
  const identity=await prisma.mediaIdentity.findUnique({where:{id:req.params.id},include:{visualDNA:true}});
  if(!identity)return fail(res,new Error('IDENTITY_NOT_FOUND'),404);
