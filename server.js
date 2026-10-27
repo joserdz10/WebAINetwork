@@ -13,6 +13,7 @@ const {runDiscovery,candidateToStory}=require('./services/discovery');
 const {analyzeStory}=require('./services/story-intelligence');
 const {generatePieces,generatePieceImage}=require('./services/content');
 const {publishPiece,savePieceToDrive,schedulePiece,processScheduled}=require('./services/publication');
+const {slugify,propose:proposeIdentity}=require('./services/identity-studio');
 const {handleTelegramUpdate}=require('./services/telegram-operator');
 const {inspectPsd,statusFor,safeTemplate,diagnosticsFor}=require('./services/template-library');
 const {renderTemplatePreview}=require('./services/template-engine');
@@ -42,7 +43,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.9.2',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),metaOAuthConfigured:metaOauth.configured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.9.3',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),metaOAuthConfigured:metaOauth.configured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.get('/api/meta/oauth/start',metaOauth.start);
 app.get('/api/meta/oauth/callback',metaOauth.callback);
@@ -88,6 +89,67 @@ app.patch('/api/states/:id',async(req,res)=>{try{
   res.json({ok:true,data:await prisma.stateBrain.update({where:{id:row.id},data})});
 }catch(e){fail(res,e)}});
 
+app.get('/api/identity-studio/accounts',async(_req,res)=>{try{
+  const [accounts,identities,states]=await Promise.all([
+    prisma.socialAccount.findMany({where:{platform:'FACEBOOK',connectionStatus:'CONNECTED',isActive:true},select:socialAccountWithIdentitySelect,orderBy:{name:'asc'}}),
+    prisma.mediaIdentity.findMany({select:{id:true,name:true,slug:true,status:true,stateBrain:{select:{stateCode:true,name:true}},mediaDNA:{select:{id:true}},visualDNA:{select:{id:true}}},orderBy:{name:'asc'}}),
+    prisma.stateBrain.findMany({select:{stateCode:true,name:true},orderBy:{name:'asc'}})
+  ]);
+  res.json({ok:true,data:{accounts,identities,states}});
+}catch(e){fail(res,e)}});
+app.post('/api/identity-studio/propose',async(req,res)=>{try{
+  const b=req.body||{},account=await prisma.socialAccount.findUnique({where:{id:b.accountId},select:{id:true,name:true,platform:true,connectionStatus:true,isActive:true}});
+  if(!account||account.platform!=='FACEBOOK'||account.connectionStatus!=='CONNECTED'||!account.isActive)return fail(res,new Error('CONNECTED_FACEBOOK_ACCOUNT_REQUIRED'),400);
+  const state=await prisma.stateBrain.findFirst({where:{stateCode:b.stateCode||'NL'}});
+  if(!state)return fail(res,new Error('STATE_NOT_FOUND'),404);
+  const name=String(b.name||account.name).trim().slice(0,120);
+  if(!name)return fail(res,new Error('NAME_REQUIRED'),400);
+  const proposal=await proposeIdentity({name,stateName:state.name,focus:String(b.focus||'').slice(0,150)});
+  res.json({ok:true,data:{...proposal,name,stateCode:state.stateCode,accountId:account.id}});
+}catch(e){fail(res,e,400)}});
+app.post('/api/identity-studio/apply',async(req,res)=>{try{
+  const b=req.body||{};
+  if(b.confirm!==true)return fail(res,new Error('CONFIRMATION_REQUIRED'),400);
+  const account=await prisma.socialAccount.findUnique({where:{id:b.accountId},include:{mediaIdentity:true}});
+  if(!account||account.platform!=='FACEBOOK'||account.connectionStatus!=='CONNECTED'||!account.isActive)return fail(res,new Error('CONNECTED_FACEBOOK_ACCOUNT_REQUIRED'),400);
+  const destination=await prisma.stateBrain.findFirst({where:{stateCode:b.stateCode||'NL'}});
+  if(!destination)return fail(res,new Error('STATE_NOT_FOUND'),404);
+  const name=String(b.name||'').trim().slice(0,120);
+  if(!name)return fail(res,new Error('NAME_REQUIRED'),400);
+  if(!b.editorial||!b.visual||!b.description)return fail(res,new Error('PROPOSAL_REQUIRED'),400);
+  const allowedEditorial=['tone','editorialStyle','geographicFocus','headlineStyle','politicalTone','language','audience','promptInstructions','avoidRules'];
+  const allowedVisual=['palette','typography','layoutStyle','photoTreatment','overlayStyle','logoPlacement','formatRules','promptInstructions'];
+  const pick=(obj,keys)=>Object.fromEntries(keys.filter(k=>obj[k]!==undefined).map(k=>[k,obj[k]]));
+  // Avoid overwriting editorial/visual DNA of an existing identity.
+  // A Facebook page already linked to another identity requires explicit transfer confirmation.
+  if(account.mediaIdentity?.name===name && account.mediaIdentity.stateBrainId===destination.id){
+    if(b.updateExisting!==true)return res.json({ok:true,data:{identityId:account.mediaIdentity.id,reused:true,connected:true,message:'Identidad existente conservada sin cambios.'}});
+    const existingId=account.mediaIdentity.id;
+    await prisma.$transaction(async tx=>{
+      await tx.mediaDNA.upsert({where:{mediaIdentityId:existingId},create:{mediaIdentityId:existingId,...pick(b.editorial,allowedEditorial)},update:pick(b.editorial,allowedEditorial)});
+      await tx.visualDNA.upsert({where:{mediaIdentityId:existingId},create:{mediaIdentityId:existingId,...pick(b.visual,allowedVisual)},update:pick(b.visual,allowedVisual)});
+      await tx.mediaIdentity.update({where:{id:existingId},data:{description:String(b.description).slice(0,750)}});
+      await tx.activityEvent.create({data:{type:'IDENTITY_UPDATED',entityType:'MEDIA_IDENTITY',entityId:existingId,title:'ADN actualizado desde Identity Studio',detail:name}});
+    });
+    return res.json({ok:true,data:{identityId:existingId,reused:true,connected:true,updated:true}});
+  }
+  if(!b.transferAccount)return fail(res,new Error('TRANSFER_CONFIRMATION_REQUIRED'),409);
+  const slugBase=slugify(name),suffix=String(account.externalAccountId||account.id).replace(/[^a-z0-9]/gi,'').slice(-10).toLowerCase();
+  const slug=(slugBase+'-'+suffix).slice(0,85);
+  const existing=await prisma.mediaIdentity.findUnique({where:{slug}});
+  if(existing)return fail(res,new Error('IDENTITY_ALREADY_EXISTS'),409);
+  const result=await prisma.$transaction(async tx=>{
+    const fresh=await tx.socialAccount.findUnique({where:{id:account.id}});
+    if(!fresh||fresh.mediaIdentityId!==account.mediaIdentityId)throw new Error('ACCOUNT_CHANGED_RETRY');
+    const identity=await tx.mediaIdentity.create({data:{stateBrainId:destination.id,slug,name,status:'DRAFT',description:String(b.description).slice(0,750)}});
+    await tx.mediaDNA.create({data:{mediaIdentityId:identity.id,...pick(b.editorial,allowedEditorial)}});
+    await tx.visualDNA.create({data:{mediaIdentityId:identity.id,...pick(b.visual,allowedVisual)}});
+    await tx.socialAccount.update({where:{id:account.id},data:{mediaIdentityId:identity.id}});
+    await tx.activityEvent.create({data:{type:'IDENTITY_CREATED',entityType:'MEDIA_IDENTITY',entityId:identity.id,title:'Identidad creada desde Facebook',detail:name,metadata:{accountId:account.id,oldIdentityId:account.mediaIdentityId,source:'IDENTITY_STUDIO'}}});
+    return identity;
+  });
+  res.status(201).json({ok:true,data:{identityId:result.id,reused:false,connected:true,status:'DRAFT'}});
+}catch(e){fail(res,e,e.message==='ACCOUNT_CHANGED_RETRY'?409:400)}});
 app.get('/api/identities',async(req,res)=>{try{res.json({ok:true,data:await prisma.mediaIdentity.findMany({where:stateWhere(req.query.state),include:{stateBrain:true,mediaDNA:true,visualDNA:true,templates:{select:templateSelect},socialAccounts:{select:socialAccountSelect}},orderBy:{name:'asc'}})})}catch(e){fail(res,e)}});
 app.post('/api/identities',async(req,res)=>{try{const state=await prisma.stateBrain.findFirst({where:{stateCode:req.body.stateCode||'NL'}});if(!state)return fail(res,new Error('STATE_NOT_FOUND'),404);const d=req.body;const row=await prisma.mediaIdentity.create({data:{stateBrainId:state.id,slug:d.slug,name:d.name,code:d.code||null,status:d.status||'DRAFT',description:d.description||null}});res.status(201).json({ok:true,data:row})}catch(e){fail(res,e)}});
 app.patch('/api/identities/:id',async(req,res)=>{try{const {name,status,description,logoUrl,websiteUrl}=req.body;res.json({ok:true,data:await prisma.mediaIdentity.update({where:{id:req.params.id},data:{name,status,description,logoUrl,websiteUrl}})})}catch(e){fail(res,e)}});
