@@ -29,7 +29,7 @@ function brandLines(name,maxChars=31){
  return lines;
 }
 function brandHeader({width,height,name,palette,kind}){
- const lines=brandLines(name,31),font=lines.length===1?40:30;
+ const lines=brandLines(name,40),font=lines.length===1?36:29;
  const startY=lines.length===1?91:72;
  return `<rect x="0" y="0" width="${width}" height="${kind==='wide'?140:150}" fill="${palette.primary}"/><rect x="0" y="${kind==='wide'?132:142}" width="${width}" height="8" fill="${palette.accent}"/>
  <rect x="55" y="36" rx="17" width="76" height="76" fill="${palette.accent}"/>
@@ -58,9 +58,9 @@ async function backgroundFor({name,palette,kind,width,height}){
  return sharp(buffer).png().toBuffer();
 }
 function brandImageSvg({name,palette,variant}){
- const p=palette,abbr=initials(name),lines=brandLines(name,31);
+ const p=palette,abbr=initials(name),lines=brandLines(name,40);
  if(variant==='profile')return svg(1024,1024,`<rect width="1024" height="1024" rx="185" fill="${p.primary}"/><circle cx="512" cy="490" r="327" fill="${p.secondary}" opacity=".45"/><rect x="230" y="250" width="564" height="450" rx="95" fill="${p.accent}"/><text x="512" y="570" text-anchor="middle" fill="${p.primary}" font-family="DejaVu Sans" font-weight="700" font-size="${abbr.length===1?350:260}">${escapeXml(abbr)}</text><rect x="300" y="767" width="424" height="13" rx="6" fill="${p.accent}"/>`);
- return svg(1640,624,`<rect width="1640" height="624" fill="${p.primary}"/><rect x="0" y="570" width="1640" height="54" fill="${p.accent}"/><circle cx="255" cy="305" r="195" fill="${p.secondary}" opacity=".55"/><text x="255" y="375" text-anchor="middle" font-family="DejaVu Sans" fill="#ffffff" font-size="174" font-weight="700">${escapeXml(abbr)}</text>${lines.map((line,i)=>`<text x="505" y="${lines.length===1?305:270+i*65}" font-family="DejaVu Sans" font-size="44" font-weight="700" fill="#ffffff">${escapeXml(line)}</text>`).join('')}<text x="510" y="435" font-family="DejaVu Sans" font-size="32" fill="${p.accent}">INFORMACIÓN VERIFICABLE</text>`);
+ return svg(1640,624,`<rect width="1640" height="624" fill="${p.primary}"/><rect x="0" y="570" width="1640" height="54" fill="${p.accent}"/><circle cx="255" cy="305" r="195" fill="${p.secondary}" opacity=".55"/><text x="255" y="375" text-anchor="middle" font-family="DejaVu Sans" fill="#ffffff" font-size="174" font-weight="700">${escapeXml(abbr)}</text>${lines.map((line,i)=>`<text x="505" y="${lines.length===1?305:270+i*65}" font-family="DejaVu Sans" font-size="40" font-weight="700" fill="#ffffff">${escapeXml(line)}</text>`).join('')}<text x="510" y="435" font-family="DejaVu Sans" font-size="32" fill="${p.accent}">INFORMACIÓN VERIFICABLE</text>`);
 }
 async function brandImage(data,variant){return sharp(brandImageSvg({...data,variant})).png().toBuffer()}
 async function design({name,existingPalette={},focus='' }){
@@ -70,6 +70,9 @@ async function design({name,existingPalette={},focus='' }){
  return{name:cleaned,palette:paletteFor({...defaults,...response}),style:String(response.style).slice(0,160),generatedBy:'AI',notice:'Identidad gráfica propuesta; el logo tipográfico y los fondos se construyen de modo reproducible.'};
 }
 async function buildTemplates({identityId,name,palette,revision}){
+ // Validate both permanent brand assets before any template can become active.
+ await brandImage({name,palette},'profile');
+ await brandImage({name,palette},'cover');
  const definitions=[];
  for(const fmt of FORMATS){
   const code=`BRAND_${identityId.replace(/[^a-z0-9]/gi,'').slice(0,20).toUpperCase()}_${fmt.key}_V${revision}`;
