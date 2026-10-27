@@ -327,8 +327,44 @@ async function deleteCatalog(ep,id){if(!confirm('¿Eliminar este registro?'))ret
 async function openMetaConnect(){
   try{
     const [ids,h]=await Promise.all([api(`/api/identities?state=${state.workspace}`),api('/api/health')]);state.identities=ids;if(!h.socialVaultConfigured)return modal('Conectar Meta',`<div class="empty-note">Antes de guardar cuentas necesitas configurar una sola variable segura en Railway: <span class="code">SOCIAL_CREDENTIALS_KEY</span>.</div>`);
-    modal('Conectar Facebook / Instagram',`<div class="eyebrow">SOCIAL CONNECTIONS MANAGER</div><h3>¿Cómo quieres conectar Meta?</h3><p class="muted mini">Puedes usar un Page Access Token existente o un token de usuario para detectar varias páginas.</p><div class="meta-connect-modes"><button type="button" class="meta-mode-card" onclick="openMetaPageTokenMode()"><b>Ya tengo Page Access Token</b><span>Conecta directamente una página como Norte En Alerta.</span></button><button type="button" class="meta-mode-card" onclick="openMetaDiscoveryMode()"><b>Detectar mis páginas</b><span>Usa un token de usuario y muestra todas las páginas administradas.</span></button></div>`);
+    modal('Conectar Facebook / Instagram',`<div class="eyebrow">SOCIAL CONNECTIONS MANAGER</div><h3>¿Cómo quieres conectar Meta?</h3><p class="muted mini">Autoriza tus páginas con Facebook. El método de token manual permanece disponible como alternativa.</p><div class="meta-connect-modes"><button type="button" class="meta-mode-card" onclick="startMetaOAuth()"><b>Conectar con Facebook</b><span>Autoriza tus páginas con tu cuenta de Meta, sin copiar tokens.</span></button><button type="button" class="meta-mode-card" onclick="openMetaPageTokenMode()"><b>Ya tengo Page Access Token</b><span>Conecta directamente una página como Norte En Alerta.</span></button><button type="button" class="meta-mode-card" onclick="openMetaDiscoveryMode()"><b>Detectar mis páginas</b><span>Usa un token de usuario y muestra todas las páginas administradas.</span></button></div>`);
   }catch(e){flash(e.message,'err')}
+}
+async function startMetaOAuth(){
+  try{
+    const d=await api('/api/meta/oauth/start');
+    if(!d.url)throw new Error('Meta no devolvió una URL de autorización.');
+    window.location.assign(d.url);
+  }catch(e){flash(e.message,'err')}
+}
+async function resumeMetaOAuth(){
+  const params=new URLSearchParams(location.search);
+  if(params.get('meta_oauth')!=='done')return;
+  history.replaceState(null,'',location.pathname+location.hash);
+  try{
+    const d=await api('/api/meta/oauth/result');
+    state.metaDiscovery=d;
+    await go('integrations');
+    state.identities=await api('/api/identities');
+    showMetaDiscoveryResults(d);
+  }catch(e){flash('No se completó la conexión con Facebook: '+e.message,'err')}
+}
+function showMetaDiscoveryResults(d){
+  const missing=d.missingPermissions||[],granted=d.permissions?.granted||[];
+  const select=state.identities.map(i=>`<option value="${esc(i.id)}">${esc(i.stateBrain?.name||'')} · ${esc(i.name)}</option>`).join('');
+  modal('Selecciona las páginas de Facebook',`<div class="eyebrow">META · PÁGINAS AUTORIZADAS</div><p class="muted">Asigna cada página a una identidad. También puedes agregar nuevas páginas desde otros estados.</p>${missing.length?`<div class="social-error">Permisos faltantes: ${missing.map(esc).join(', ')}</div>`:''}<div class="mini muted">Permisos concedidos: ${granted.map(esc).join(', ')||'ninguno'}</div><div class="meta-discovery">${(d.pages||[]).map((p,i)=>`<div class="meta-page"><div><b>${esc(p.name)}</b><div class="mini muted">ID ${esc(p.id)}</div>${p.instagram?`<div class="mini">Instagram: @${esc(p.instagram.username||p.instagram.id)}</div>`:''}</div><div class="meta-page-actions"><select id="meta-oauth-identity-${i}">${select}</select>${p.instagram?`<label class="template-toggle"><input id="meta-oauth-ig-${i}" type="checkbox" checked> Instagram</label>`:''}<button type="button" class="cta" id="meta-oauth-connect-${i}" ${p.connectable?'':'disabled'} onclick="connectMetaOAuthPage(${i})">Conectar</button></div></div>`).join('')||'<div class="empty-note">Meta no devolvió páginas. Revisa el acceso a páginas y los permisos de la aplicación.</div>'}</div>`);
+}
+async function connectMetaOAuthPage(index){
+  try{
+    const p=state.metaDiscovery?.pages?.[index];
+    if(!p?.ticket)throw new Error('Página no disponible');
+    const button=document.getElementById('meta-oauth-connect-'+index);
+    button.disabled=true;
+    await api('/api/meta/connect',{method:'POST',body:JSON.stringify({mediaIdentityId:val('meta-oauth-identity-'+index),ticket:p.ticket,connectInstagram:Boolean(document.getElementById('meta-oauth-ig-'+index)?.checked)})});
+    button.textContent='Conectada';
+    state.bootstrap=null;
+    flash(p.name+' conectada. Puedes continuar con las demás páginas.');
+  }catch(e){const button=document.getElementById('meta-oauth-connect-'+index);if(button)button.disabled=false;flash(e.message,'err')}
 }
 function metaIdentitySelect(){return `<div class="field"><label>Identidad de AI Media Network</label><select id="meta-identity">${state.identities.map(i=>`<option value="${i.id}">${esc(i.name)}</option>`).join('')}</select></div>`}
 function openMetaPageTokenMode(){
@@ -387,9 +423,9 @@ async function newChannel(){const ids=await api(`/api/identities?state=${state.w
 async function saveChannel(){try{await api('/api/channels',{method:'POST',body:JSON.stringify({mediaIdentityId:val('ch-id'),platform:val('ch-platform'),name:val('ch-name'),externalAccountId:val('ch-ext')||null,connectionStatus:val('ch-ext')?'CONNECTED':'PENDING'})});document.querySelector('#modal').close();flash('Canal guardado.');go('channels')}catch(e){flash(e.message,'err')}}
 function val(id){return document.getElementById(id)?.value||''}
 
-window.go=go;Object.assign(window,{reviewSpecializedFinding,chooseSpecializedPreset,runSpecializedSearch,toggleSource,autoDiscoverSources,previewRecommendedSources,importRecommendedSources,newStateBrain,saveStateBrain,configureStateBrain,saveStateBrainSettings,openStateWorkspace,switchNewsState,setNewsHours,runDiscovery,promoteCandidate,discardCandidate,analyzeStory,generateContent,approvePiece,imagePiece,drivePiece,publishDialog,publishNow,resolveError,newIdentity,saveIdentity,editDNA,showTemplates,openTemplatePreview,uploadTemplate,editTemplateMapping,saveTemplateMapping,activateTemplate,addTemplateField,dragTemplateField,dropTemplateField,selectTemplateField,startTemplateBoxPointer,setTemplateProp,removeTemplateField,showDnaTab,saveDNA,saveVisualDNA,newCatalog,saveCatalog,deleteCatalog,openMetaConnect,openMetaPageTokenMode,connectMetaPageToken,openMetaDiscoveryMode,discoverMetaAccounts,connectMetaPage,testChannel,disconnectChannel,newChannel,saveChannel});
+window.go=go;Object.assign(window,{reviewSpecializedFinding,chooseSpecializedPreset,runSpecializedSearch,toggleSource,autoDiscoverSources,previewRecommendedSources,importRecommendedSources,newStateBrain,saveStateBrain,configureStateBrain,saveStateBrainSettings,openStateWorkspace,switchNewsState,setNewsHours,runDiscovery,promoteCandidate,discardCandidate,analyzeStory,generateContent,approvePiece,imagePiece,drivePiece,publishDialog,publishNow,resolveError,newIdentity,saveIdentity,editDNA,showTemplates,openTemplatePreview,uploadTemplate,editTemplateMapping,saveTemplateMapping,activateTemplate,addTemplateField,dragTemplateField,dropTemplateField,selectTemplateField,startTemplateBoxPointer,setTemplateProp,removeTemplateField,showDnaTab,saveDNA,saveVisualDNA,newCatalog,saveCatalog,deleteCatalog,startMetaOAuth,connectMetaOAuthPage,openMetaConnect,openMetaPageTokenMode,connectMetaPageToken,openMetaDiscoveryMode,discoverMetaAccounts,connectMetaPage,testChannel,disconnectChannel,newChannel,saveChannel});
 
 document.querySelector('#workspace-select').onchange=e=>{state.workspace=e.target.value;state.bootstrap=null;go(state.page)};
 document.querySelector('#refresh-btn').onclick=async()=>{state.bootstrap=null;try{await refreshWorkspaces()}catch(e){flash(e.message,'err')}go(state.page)};
-(async()=>{try{const h=await api('/api/health');document.querySelector('#system-status').textContent=h.databaseReady?'Sistema en línea':'Sistema parcial';document.querySelector('#system-version').textContent=`v${h.version} · ${h.aiConfigured?'IA activa':'IA pendiente'}`}catch{document.querySelector('#system-status').textContent='API no disponible'}renderNav();await refreshWorkspaces();go(location.hash.replace('#','')||'overview')})();
+(async()=>{try{const h=await api('/api/health');document.querySelector('#system-status').textContent=h.databaseReady?'Sistema en línea':'Sistema parcial';document.querySelector('#system-version').textContent=`v${h.version} · ${h.aiConfigured?'IA activa':'IA pendiente'}`}catch{document.querySelector('#system-status').textContent='API no disponible'}renderNav();await refreshWorkspaces();await go(location.hash.replace('#','')||'overview');await resumeMetaOAuth()})();
 window.addEventListener('hashchange',()=>{const p=location.hash.replace('#','');if(p&&p!==state.page)go(p)});
