@@ -56,16 +56,26 @@ async function generatePieces(prisma,args){const results=[];for(const type of ar
 async function realSourceImages(story){
   const out=[],seen=new Set();const add=x=>{if(!x?.url||seen.has(x.url))return;seen.add(x.url);out.push({...x,synthetic:false})};
   const gc=story.generationContext||{};add(gc.sourceImage);
-  for(const link of story.sources||[]){
+  const links=story.sources||[];
+  // Article metadata requests are independent. Keep source order for predictable
+  // selection, but do not wait for each network request before starting the next.
+  const found=await Promise.all(links.map(async link=>{
+    let url=null;
+    if(link.sourceUrl)try{url=await resolveArticleImage(link.sourceUrl)}catch(e){console.warn('Source metadata unavailable:',e.message)}
+    return{link,url};
+  }));
+  for(const {link,url} of found){
     if(link.verification?.imageUrl)add({url:link.verification.imageUrl,origin:link.verification.imageOrigin||'SOURCE_VERIFICATION',sourceUrl:link.sourceUrl,sourceName:link.source?.name||null});
-    if(link.sourceUrl){const url=await resolveArticleImage(link.sourceUrl);if(url)add({url,origin:'ARTICLE_METADATA',sourceUrl:link.sourceUrl,sourceName:link.source?.name||null})}
+    if(url)add({url,origin:'ARTICLE_METADATA',sourceUrl:link.sourceUrl,sourceName:link.source?.name||null});
   }
   return out;
 }
 async function generatePieceImage(prisma,id){
   const piece=await prisma.contentPiece.findUnique({where:{id},include:{story:{include:{sources:{include:{source:true}},topics:{include:{topic:true}}}},mediaIdentity:{include:{mediaDNA:true,visualDNA:true,templates:true}}}});if(!piece) throw new Error('CONTENT_PIECE_NOT_FOUND');
-  const state=await prisma.stateBrain.findUnique({where:{id:piece.story.stateBrainId}});
-  const article=await resolveArticleEditorial(piece.story.sources?.[0]?.sourceUrl);
+  const [state,article]=await Promise.all([
+    prisma.stateBrain.findUnique({where:{id:piece.story.stateBrainId}}),
+    resolveArticleEditorial(piece.story.sources?.[0]?.sourceUrl)
+  ]);
   const verified=assertEditorialQuality({title:piece.story.title,summary:piece.story.summary,stateCode:state?.stateCode,articleTitle:article.title,articleContext:article.context});
   piece.story.title=verified.title;piece.story.summary=verified.summary;
   await prisma.story.update({where:{id:piece.story.id},data:{title:verified.title,summary:verified.summary,generationContext:{...(piece.story.generationContext||{}),editorialQuality:'VERIFIED_V169',originalExtractedTitle:piece.story.generationContext?.originalExtractedTitle||piece.story.title}}});
