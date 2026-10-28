@@ -72,3 +72,27 @@ test('Three compositions render consistently across all supported formats',async
  }
  assert.equal(signatures.size,3,'Las composiciones no deben ser solamente recoloreos');
 });
+
+test('Visible geometry survives over a real image in all three styles',async()=>{
+ const {renderTemplate}=require('../services/template-engine');
+ const palette=paletteFor({primary:'#193B57',secondary:'#136BDF',accent:'#38C6DE'});
+ const photo=await sharp({create:{width:1200,height:1200,channels:3,background:{r:0,g:200,b:0}}}).png().toBuffer();
+ const input={photo:'data:image/png;base64,'+photo.toString('base64'),headline:'Reporte ciudadano sobre servicios públicos en Monterrey',category:'ACTUALIDAD',summary:'Información verificada de interés para los habitantes de la región.',source:'Fuente verificada'};
+ const samples=new Set();
+ for(const style of ['IMPACTO','REVISTA','PULSO']){
+  const [template]=await buildTemplates({identityId:'visible-'+style,name:'Noti Siete',palette,revision:1,style});
+  const rendered=await renderTemplate(template,input);
+  const {data,info}=await sharp(rendered).raw().toBuffer({resolveWithObject:true});
+  const pixel=(x,y)=>[...data.subarray((y*info.width+x)*info.channels,(y*info.width+x)*info.channels+3)];
+  // The photograph starts at the top; the distinctive overlay must be visible above it.
+  const p=template.layerMap.PHOTO;
+  let target;
+  if(style==='IMPACTO')target=[p.left+p.width-20,p.top+15];
+  if(style==='REVISTA')target=[p.left+15,p.top+15];
+  if(style==='PULSO')target=[p.left+p.width-20,p.top+20];
+  const rgb=pixel(...target);
+  assert.notDeepEqual(rgb,[0,200,0],style+' overlay must be painted above the photo');
+  samples.add(rgb.join(','));
+ }
+ assert.ok(samples.size>=2,'Not all styles may reduce to an identical colored bar');
+});

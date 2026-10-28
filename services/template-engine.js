@@ -97,6 +97,33 @@ function textSvg(width,height,layerMap,data){
   return Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${chunks.join('')}</svg>`);
 }
 
+// Decorative overlays MUST be composited AFTER the photograph. The old renderer
+// baked decorations into the base image, then covered them with the photo.
+function brandPhotoOverlay(template){
+ const style=template.configuration?.designStyle;
+ if(!template.configuration?.brandStudio||!['IMPACTO','REVISTA','PULSO'].includes(style))return null;
+ const {width:w,height:h}=template,p=template.layerMap?.PHOTO;
+ if(!p)return null;
+ const x=Number(p.left??p.x??0),y=Number(p.top??p.y??0),pw=Number(p.width),ph=Number(p.height);
+ const accent=template.configuration?.brandPalette?.accent||'#22B8CF';
+ const primary=template.configuration?.brandPalette?.primary||'#13213B';
+ let art='';
+ if(style==='IMPACTO'){
+  art=`<path d="M${x} ${y+ph-75} L${x+Math.min(290,pw*.32)} ${y+ph-75} L${x+Math.min(360,pw*.4)} ${y+ph} L${x} ${y+ph}Z" fill="${accent}"/>
+  <path d="M${x+pw-175} ${y} L${x+pw} ${y} L${x+pw} ${y+175}Z" fill="${primary}" opacity=".88"/>
+  <path d="M${x+pw-95} ${y} L${x+pw} ${y} L${x+pw} ${y+95}Z" fill="${accent}"/> `;
+ }else if(style==='REVISTA'){
+  art=`<rect x="${x+10}" y="${y+10}" width="${pw-20}" height="${ph-20}" fill="none" stroke="#ffffff" stroke-width="12"/>
+  <rect x="${x+24}" y="${y+24}" width="${Math.min(135,pw/5)}" height="44" fill="${accent}"/>
+  <path d="M${x+pw-135} ${y+ph} L${x+pw} ${y+ph} L${x+pw} ${y+ph-135}Z" fill="${accent}"/>`;
+ }else{
+  art=`<rect x="${x}" y="${y+Math.round(ph*.72)}" width="${Math.min(30,pw*.05)}" height="${Math.round(ph*.28)}" fill="${accent}"/>
+  <path d="M${x+pw-265} ${y} L${x+pw} ${y} L${x+pw} ${y+135} L${x+pw-175} ${y+135}Z" fill="${primary}" opacity=".94"/>
+  <path d="M${x+pw-165} ${y} L${x+pw} ${y} L${x+pw} ${y+66} L${x+pw-115} ${y+66}Z" fill="${accent}"/>
+  <rect x="${x+Math.round(pw*.12)}" y="${y+ph-22}" width="${Math.round(pw*.58)}" height="22" fill="${accent}"/>`;
+ }
+ return Buffer.from(`<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${art}</svg>`);
+}
 async function renderGenericLayered(template,data){
   if(!template.baseImageData) throw new Error('TEMPLATE_BASE_IMAGE_REQUIRED');
   requireEditorialFonts();
@@ -110,6 +137,8 @@ async function renderGenericLayered(template,data){
     const prepared=await sharp(photo).resize(Math.max(1,Number(p.width||width)),Math.max(1,Number(p.height||height)),{fit:p.fit||'cover',position:'attention'}).png().toBuffer();
     composites.push({input:prepared,left:Number(p.left??p.x??0),top:Number(p.top??p.y??0)});
   }
+  const overlay=brandPhotoOverlay(template);
+  if(overlay)composites.push({input:overlay,left:0,top:0});
   composites.push({input:textSvg(width,height,map,data),left:0,top:0});
   return sharp(base).composite(composites).png().toBuffer();
 }
