@@ -66,7 +66,7 @@ async function analyzeStory(prisma, publicId) {
       summary:analysis.summary, context:analysis.context, keyFacts:analysis.keyFacts, actors:analysis.actors,
       timeline:analysis.timeline, contradictions:analysis.contradictions, editorialRisks:analysis.editorialRisks,
       sourceAssessment:analysis.sourceAssessment, confidence:analysis.confidence, status:'READY', readyAt:new Date(),
-      generationContext:{analyzedAt:new Date().toISOString(),engine:process.env.OPENAI_API_KEY?'AI':'FALLBACK'}
+      generationContext:{...(story.generationContext||{}),analyzedAt:new Date().toISOString(),engine:process.env.OPENAI_API_KEY?'AI':'FALLBACK'}
     }});
     for(const t of matchedTopics) await tx.storyTopic.upsert({where:{storyId_topicId:{storyId:story.id,topicId:t.id}},create:{storyId:story.id,topicId:t.id},update:{}});
     for(const p of matchedProfiles) await tx.storyProfile.upsert({where:{storyId_profileId:{storyId:story.id,profileId:p.id}},create:{storyId:story.id,profileId:p.id},update:{}});
