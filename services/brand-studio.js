@@ -153,7 +153,7 @@ async function buildTemplates({identityId,name,palette,revision,logo=null,style=
  for(const fmt of FORMATS){
   const code=`BRAND_${identityId.replace(/[^a-z0-9]/gi,'').slice(0,20).toUpperCase()}_${fmt.key}_V${revision}`;
   const base=await backgroundFor({...fmt,name,palette,logo,style});
-  const template={code,name:`${name} · ${fmt.label} · v${revision}`,mediaIdentityId:identityId,renderer:'GENERIC_LAYERED',sourceType:'BUILT_IN',format:fmt.key,status:'READY',isActive:false,width:fmt.width,height:fmt.height,version:revision,baseImageMimeType:'image/png',baseImageData:base,layerMap:layerMapFor(fmt.kind,fmt.width,fmt.height,palette,style),configuration:{brandStudio:true,designStyle:checkedStyle(style),revision,compatibleFormats:[fmt.key],requiresRealPhoto:true}};
+  const template={code,name:`${name} · ${fmt.label} · v${revision}`,mediaIdentityId:identityId,renderer:'GENERIC_LAYERED',sourceType:'BUILT_IN',format:fmt.key,status:'READY',isActive:false,width:fmt.width,height:fmt.height,version:revision,baseImageMimeType:'image/png',baseImageData:base,layerMap:layerMapFor(fmt.kind,fmt.width,fmt.height,palette,style),configuration:{brandStudio:true,designStyle:checkedStyle(style),brandPalette:palette,revision,compatibleFormats:[fmt.key],requiresRealPhoto:true}};
   // Render full-size samples, using the same runtime code as the publishing pipeline.
   for(const text of ['Así se verá una noticia comprobada de la región','Autoridades informaron sobre medidas para mejorar los servicios públicos de la región durante esta semana']){
    const image=await renderTemplatePreview(template,{headline:text,summary:'Información verificada, con contexto y fuente consultable.',category:'ACTUALIDAD',source:'Medio de prueba'});
