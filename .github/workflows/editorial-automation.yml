@@ -1,0 +1,29 @@
+name: Editorial automation v1.11.0 validation
+on:
+  pull_request:
+    paths:
+      - 'services/editorial-automation.js'
+      - 'services/discovery.js'
+      - 'services/telegram-operator.js'
+      - 'packages/database/prisma/schema.prisma'
+      - 'server.js'
+      - 'public/app.js'
+      - 'tests/editorial-automation.test.js'
+      - 'package.json'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run db:generate
+      - run: npm run check
+      - run: node --check services/editorial-automation.js
+      - run: node --check services/telegram-operator.js
+      - run: node --test tests/editorial-automation.test.js
+      - run: npm run test:brand
+      - run: npm run test:quality
