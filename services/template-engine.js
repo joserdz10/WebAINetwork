@@ -40,7 +40,7 @@ function fitCaption(text,{width=940,maxLines=4,maxFont=56,minFont=32}={}){
  throw new Error('VISUAL_CAPTION_OVERFLOW: El caption completo no cabe en el template; necesita revisión editorial');
 }
 function dataUriToBuffer(v){const m=String(v||'').match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/s);return m?Buffer.from(m[1],'base64'):null}
-async function sourceBuffer(value){const local=dataUriToBuffer(value);if(local)return local;if(/^https?:\/\//i.test(value||'')){const r=await fetch(value);if(!r.ok)throw new Error('SOURCE_IMAGE_DOWNLOAD_FAILED');return Buffer.from(await r.arrayBuffer())}throw new Error('SOURCE_IMAGE_INVALID')}
+async function sourceBuffer(value){const local=dataUriToBuffer(value);if(local)return local;if(/^https?:\/\//i.test(value||'')){const r=await fetch(value,{signal:AbortSignal.timeout(15000)});if(!r.ok)throw new Error('SOURCE_IMAGE_DOWNLOAD_FAILED');return Buffer.from(await r.arrayBuffer())}throw new Error('SOURCE_IMAGE_INVALID')}
 function neaOverlay({headline,category,summary,source}){
  const fitted=fitCaption(headline);const tspans=fitted.lines.map((x,i)=>`<tspan x="70" dy="${i?fitted.lineHeight:0}">${esc(x)}</tspan>`).join('');
  return Buffer.from(`<svg width="1080" height="1350" xmlns="http://www.w3.org/2000/svg">
