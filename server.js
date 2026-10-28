@@ -17,7 +17,7 @@ const {slugify,propose:proposeIdentity}=require('./services/identity-studio');
 const {handleTelegramUpdate}=require('./services/telegram-operator');
 const {inspectPsd,statusFor,safeTemplate,diagnosticsFor}=require('./services/template-library');
 const {renderTemplatePreview}=require('./services/template-engine');
-const {design:designBrand,brandImage,buildTemplates,paletteFor}=require('./services/brand-studio');
+const {design:designBrand,brandImage,buildTemplates,paletteFor,normalizeLogo}=require('./services/brand-studio');
 const {discoverMetaPages,inspectPageAccessToken,decryptTicket,validateMetaAccount}=require('./services/integrations/meta');
 const {configured:socialVaultConfigured,encryptSecret,verifyMediaId}=require('./services/secret-vault');
 const metaOauth=require('./services/integrations/meta-oauth');
@@ -44,7 +44,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.9.4',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),metaOAuthConfigured:metaOauth.configured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.9.5',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),metaOAuthConfigured:metaOauth.configured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.get('/api/meta/oauth/start',metaOauth.start);
 app.get('/api/meta/oauth/callback',metaOauth.callback);
@@ -160,21 +160,22 @@ app.post('/api/identities/:id/brand/propose',async(req,res)=>{try{
  const identity=await prisma.mediaIdentity.findUnique({where:{id:req.params.id},include:{visualDNA:true}});
  if(!identity)return fail(res,new Error('IDENTITY_NOT_FOUND'),404);
  const proposal=await designBrand({name:identity.name,focus:String(req.body?.focus||'').slice(0,160),existingPalette:identity.visualDNA?.palette||{}});
- const preview=await brandImage(proposal,'profile');
+ const preview=await brandImage({...proposal,logo:identity.brandLogoData?Buffer.from(identity.brandLogoData):null},'profile');
  res.json({ok:true,data:{...proposal,preview:'data:image/png;base64,'+preview.toString('base64'),existingTemplates:await prisma.mediaTemplate.count({where:{mediaIdentityId:identity.id,isActive:true}})}});
 }catch(e){fail(res,e,400)}});
 app.get('/api/identities/:id/brand/:asset',async(req,res)=>{try{
  if(!['profile.png','cover.png'].includes(req.params.asset))return res.status(404).end();
  const identity=await prisma.mediaIdentity.findUnique({where:{id:req.params.id},include:{visualDNA:true}});
  if(!identity)return res.status(404).end();
- const buffer=await brandImage({name:identity.name,palette:paletteFor(identity.visualDNA?.palette||{})},req.params.asset==='profile.png'?'profile':'cover');
+ const buffer=await brandImage({name:identity.name,palette:paletteFor(identity.visualDNA?.palette||{}),logo:identity.brandLogoData?Buffer.from(identity.brandLogoData):null},req.params.asset==='profile.png'?'profile':'cover');
  res.setHeader('Content-Type','image/png');res.setHeader('Cache-Control','public,max-age=300');res.end(buffer);
 }catch(e){fail(res,e)}});
 app.post('/api/identities/:id/brand/preview',async(req,res)=>{try{
  const identity=await prisma.mediaIdentity.findUnique({where:{id:req.params.id}});
  if(!identity)return fail(res,new Error('IDENTITY_NOT_FOUND'),404);
  const palette=paletteFor(req.body?.palette||{});
- const templates=await buildTemplates({identityId:identity.id,name:identity.name,palette,revision:1});
+ const logo=req.body?.logoData?await normalizeLogo(req.body.logoData):(identity.brandLogoData?Buffer.from(identity.brandLogoData):null);
+ const templates=await buildTemplates({identityId:identity.id,name:identity.name,palette,revision:1,logo});
  const results=[];
  for(const template of templates){
    const preview=await renderTemplatePreview(template,{headline:'Autoridades presentan nuevas medidas para mejorar los servicios públicos de la región',summary:'Información verificada y contextualizada con la fuente original de la noticia.',source:'Fuente de prueba'});
@@ -192,7 +193,8 @@ app.post('/api/identities/:id/brand/activate',async(req,res)=>{try{
  // Run all format previews before writing to PostgreSQL.
  const old=await prisma.mediaTemplate.findMany({where:{mediaIdentityId:identity.id,configuration:{path:['brandStudio'],equals:true}},select:{version:true}});
  const revision=Math.max(0,...old.map(t=>t.version||0))+1;
- const templates=await buildTemplates({identityId:identity.id,name:identity.name,palette,revision});
+ const logo=req.body?.logoData?await normalizeLogo(req.body.logoData):(identity.brandLogoData?Buffer.from(identity.brandLogoData):null);
+ const templates=await buildTemplates({identityId:identity.id,name:identity.name,palette,revision,logo});
  const previousVisual=identity.visualDNA||{};
  const visual={palette,layoutStyle:'AI Brand Studio · modular',photoTreatment:'Fotografías originales de fuentes periodísticas, no generadas por IA',overlayStyle:'Capas fijas validadas, texto ajustado sin cortar',logoPlacement:'Cabecera',formatRules:{...(previousVisual.formatRules&&typeof previousVisual.formatRules==='object'?previousVisual.formatRules:{}),brandStudio:true,brandRevision:revision,formats:templates.map(t=>({format:t.format,width:t.width,height:t.height}))},promptInstructions:'Usar exclusivamente plantillas aprobadas de este medio, fotografía real de la fuente y texto completo; rechazar cualquier composición que desborde.'};
  const rows=await prisma.$transaction(async tx=>{
@@ -202,7 +204,7 @@ app.post('/api/identities/:id/brand/activate',async(req,res)=>{try{
    await tx.mediaTemplate.updateMany({where:{mediaIdentityId:identity.id,format:{in:formats},id:{notIn:created.map(x=>x.id)}},data:{isActive:false}});
    await tx.mediaTemplate.updateMany({where:{id:{in:created.map(x=>x.id)}},data:{isActive:true}});
    await tx.visualDNA.upsert({where:{mediaIdentityId:identity.id},create:{mediaIdentityId:identity.id,...visual},update:visual});
-   await tx.mediaIdentity.update({where:{id:identity.id},data:{logoUrl:`/api/identities/${identity.id}/brand/profile.png`}});
+   await tx.mediaIdentity.update({where:{id:identity.id},data:{logoUrl:`/api/identities/${identity.id}/brand/profile.png`,brandLogoData:logo,brandLogoMimeType:logo?'image/png':null}});
    await tx.activityEvent.create({data:{type:'BRAND_ACTIVATED',entityType:'MEDIA_IDENTITY',entityId:identity.id,title:'Identidad gráfica activada',detail:identity.name,metadata:{revision,formats}}});
    return created;
  });
