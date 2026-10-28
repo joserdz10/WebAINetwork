@@ -53,9 +53,11 @@ async function queueProduction(prisma,job,settings){
  }
  let queued=0;
  for(const identity of identities){
+ if(queued>=settings.globalCycleLimit)break;
  const already=await prisma.editorialJob.count({where:{identityId:identity.id,kind:'PRODUCE',status:{in:['QUEUED','RUNNING']}}});
  const quota=Math.max(0,settings.maxPiecesPerIdentity-already);
  for(const candidate of eligible.slice(0,quota)){
+ if(queued>=settings.globalCycleLimit)break;
  const key=`produce:${candidate.id}:${identity.id}`;
  const exists=await prisma.editorialJob.findUnique({where:{dedupeKey:key},select:{id:true}});
  if(exists)continue;
@@ -82,7 +84,12 @@ async function perform(prisma,job,settings){
  await prisma.editorialJob.update({where:{id:job.id},data:{storyId:story.id}});
  const existing=await prisma.contentPiece.findFirst({where:{storyId:story.id,mediaIdentityId:identity.id,type:VISUAL_TYPE},select:{id:true,status:true,metadata:true}});
  if(existing?.metadata?.imageStatus==='SOURCE_IMAGE_RENDERED')return {pieceId:existing.id,reused:true};
- if(existing)throw new Error('EXISTING_PIECE_REQUIRES_MANUAL_REVIEW');
+ if(existing){
+  if(existing.status!=='GENERATED')throw new Error('EXISTING_PIECE_REQUIRES_MANUAL_REVIEW');
+  await generatePieceImage(prisma,existing.id);
+  await notify(prisma,settings,`📰 Pieza recuperada para revisión: ${identity.name} / #${story.publicId}`);
+  return {pieceId:existing.id,recovered:true};
+ }
  if(story.status==='DISCOVERED')await analyzeStory(prisma,story.publicId);
  const piece=await generatePiece(prisma,{publicId:story.publicId,identityId:identity.id,type:VISUAL_TYPE});
  // renderTemplate enforces authentic source image, complete caption and summary.
