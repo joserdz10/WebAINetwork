@@ -39,7 +39,7 @@ async function normalizeLogo(data){
 }
 async function addLogo(base,logo,{x,y,width,height,padding=0}){
  if(!logo)return base;
- const mark=await sharp(logo).resize(Math.max(1,width-2*padding),Math.max(1,height-2*padding),{fit:'contain'}).png().toBuffer();
+ const mark=await sharp(logo).resize(Math.max(1,width-2*padding),Math.max(1,height-2*padding),{fit:'contain',background:{r:0,g:0,b:0,alpha:0}}).png().toBuffer();
  const info=await sharp(mark).metadata();
  const left=Math.round(x+(width-info.width)/2),top=Math.round(y+(height-info.height)/2);
  return sharp(base).composite([{input:mark,left,top}]).png().toBuffer();
