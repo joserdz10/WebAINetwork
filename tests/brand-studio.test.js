@@ -96,3 +96,17 @@ test('Visible geometry survives over a real image in all three styles',async()=>
  }
  assert.ok(samples.size>=2,'Not all styles may reduce to an identical colored bar');
 });
+
+test('Long summary adjusts automatically without truncation marks or overflow errors',async()=>{
+ const {fitTextBox}=require('../services/template-engine');
+ const box={width:900,height:95,fontSize:24,maxLines:2};
+ const text='El gobierno informó sobre una nueva iniciativa de transporte público en varios municipios. Las autoridades explicaron que los trabajos continuarán durante los próximos meses y serán evaluados periódicamente.';
+ const result=fitTextBox(text,box,'SUMMARY');
+ assert.ok(result.lines.length<=2);
+ assert.ok(result.lines.every(x=>!x.includes('…')));
+ assert.ok(result.text==='El gobierno informó sobre una nueva iniciativa de transporte público en varios municipios.'||result.text==='Más información en la publicación.'||result.text===text);
+ const huge=Array(90).fill('Información sobre diferentes asuntos públicos y avances de los proyectos.').join(' ');
+ const fallback=fitTextBox(huge,{width:700,height:40,fontSize:26,maxLines:1},'SUMMARY');
+ assert.ok(fallback.text.length>0);
+ assert.ok(!fallback.text.includes('…'));
+});
