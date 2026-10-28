@@ -8,6 +8,12 @@ const FORMATS=[
  {key:'INSTAGRAM_STORY',label:'Instagram story 9:16',width:1080,height:1920,kind:'story'},
  {key:'EDITORIAL_GRAPHIC',label:'Editorial horizontal 16:9',width:1920,height:1080,kind:'wide'}
 ];
+const DESIGN_STYLES=[
+ {id:'IMPACTO',name:'Impacto',description:'Fotografía protagonista, titular contundente y bloques diagonales'},
+ {id:'REVISTA',name:'Revista',description:'Fotografía enmarcada, editorial elegante y numeración decorativa'},
+ {id:'PULSO',name:'Pulso',description:'Diseño urbano con paneles asimétricos y acentos geométricos'}
+];
+function checkedStyle(id){return DESIGN_STYLES.some(x=>x.id===id)?id:'IMPACTO'}
 function escapeXml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))}
 function color(value,fallback){return /^#[0-9a-f]{6}$/i.test(String(value||''))?String(value).toUpperCase():fallback}
 function cleanName(name){const s=String(name||'').trim().replace(/\s+/g,' ');if(s.length<2||s.length>70)throw new Error('BRAND_NAME_LENGTH_INVALID');return s}
@@ -64,25 +70,53 @@ function brandHeader({width,height,name,palette,kind}){
  <text x="93" y="90" font-family="DejaVu Sans" font-size="34" font-weight="700" fill="${palette.primary}" text-anchor="middle">${escapeXml(initials(name))}</text>
  ${lines.map((line,i)=>`<text x="160" y="${startY+i*36}" font-family="DejaVu Sans" font-size="${font}" font-weight="700" fill="#ffffff">${escapeXml(line)}</text>`).join('')}`;
 }
-function layout(kind,width,height){
- const margin=60;
- if(kind==='story')return {photo:{x:0,y:150,width,height:1000},category:{x:margin,y:1190,width:width-120,height:40,fontSize:29},headline:{x:margin,y:1270,width:width-120,height:355,fontSize:61,maxLines:5},summary:{x:margin,y:1640,width:width-120,height:135,fontSize:26,maxLines:3},source:{x:margin,y:1814,width:width-120,height:48,fontSize:18,maxLines:1},footerY:1870};
- if(kind==='wide')return {photo:{x:0,y:140,width:960,height:940},category:{x:1010,y:225,width:850,height:48,fontSize:32},headline:{x:1010,y:320,width:850,height:410,fontSize:65,maxLines:5},summary:{x:1010,y:750,width:850,height:130,fontSize:26,maxLines:3},source:{x:1010,y:955,width:850,height:45,fontSize:18,maxLines:1},footerY:1035};
- return {photo:{x:0,y:150,width,height:590},category:{x:margin,y:775,width:width-120,height:45,fontSize:28},headline:{x:margin,y:842,width:width-120,height:285,fontSize:59,maxLines:4},summary:{x:margin,y:1142,width:width-120,height:105,fontSize:24,maxLines:2},source:{x:margin,y:1270,width:width-120,height:38,fontSize:17,maxLines:1},footerY:1322};
+function layout(kind,width,height,style='IMPACTO'){
+ const s=checkedStyle(style),m=60;
+ const field=(x,y,w,h,fontSize,maxLines)=>({x,y,width:w,height:h,fontSize,maxLines});
+ if(kind==='wide'){
+  if(s==='REVISTA')return {photo:{x:80,y:200,width:910,height:750},category:field(1050,240,790,55,30,1),headline:field(1050,345,790,360,62,5),summary:field(1050,755,790,120,24,3),source:field(1050,970,790,35,17,1)};
+  if(s==='PULSO')return {photo:{x:0,y:140,width:1100,height:940},category:field(1160,210,690,50,30,1),headline:field(1160,305,690,440,63,6),summary:field(1160,770,690,116,24,3),source:field(1160,970,690,38,17,1)};
+  return {photo:{x:0,y:140,width:990,height:940},category:field(1050,220,800,50,30,1),headline:field(1050,320,800,390,65,5),summary:field(1050,760,800,115,24,3),source:field(1050,965,800,40,17,1)};
+ }
+ if(kind==='story'){
+  if(s==='REVISTA')return {photo:{x:65,y:195,width:950,height:900},category:field(80,1160,920,45,28,1),headline:field(80,1250,920,360,61,5),summary:field(80,1640,920,118,24,3),source:field(80,1810,920,36,17,1)};
+  if(s==='PULSO')return {photo:{x:0,y:150,width:1080,height:1040},category:field(70,1225,940,45,30,1),headline:field(70,1290,940,340,60,5),summary:field(70,1665,940,100,24,3),source:field(70,1822,940,36,17,1)};
+  return {photo:{x:0,y:150,width:1080,height:1020},category:field(m,1210,960,40,29,1),headline:field(m,1280,960,335,61,5),summary:field(m,1650,960,115,25,3),source:field(m,1815,960,38,17,1)};
+ }
+ if(s==='REVISTA')return {photo:{x:65,y:210,width:950,height:535},category:field(80,792,920,45,27,1),headline:field(80,850,920,275,58,4),summary:field(80,1145,920,105,24,2),source:field(80,1278,920,36,17,1)};
+ if(s==='PULSO')return {photo:{x:0,y:150,width:1080,height:625},category:field(70,799,940,45,27,1),headline:field(70,862,940,265,58,4),summary:field(70,1151,940,100,23,2),source:field(70,1275,940,35,17,1)};
+ return {photo:{x:0,y:150,width:1080,height:590},category:field(m,780,960,43,28,1),headline:field(m,847,960,280,59,4),summary:field(m,1145,960,100,24,2),source:field(m,1275,960,34,17,1)};
 }
-function layerMapFor(kind,width,height,palette){
- const p=layout(kind,width,height);
- const t=(field,box,colorValue)=>({x:box.x,y:box.y,width:box.width,height:box.height,fontSize:box.fontSize,fontWeight:field==='HEADLINE'?700:600,maxLines:box.maxLines||1,color:colorValue,fontFamily:'DejaVu Sans'});
+function layerMapFor(kind,width,height,palette,style='IMPACTO'){
+ const p=layout(kind,width,height,style);
+ const t=(field,b,col)=>({x:b.x,y:b.y,width:b.width,height:b.height,fontSize:b.fontSize,fontWeight:field==='HEADLINE'?700:600,maxLines:b.maxLines||1,color:col,fontFamily:checkedStyle(style)==='REVISTA'&&field==='HEADLINE'?'DejaVu Serif':'DejaVu Sans'});
  return {PHOTO:{left:p.photo.x,top:p.photo.y,width:p.photo.width,height:p.photo.height,fit:'cover'},
- CATEGORY:t('CATEGORY',p.category,palette.secondary),
- HEADLINE:t('HEADLINE',p.headline,palette.text),
- SUMMARY:t('SUMMARY',p.summary,palette.text),
- SOURCE:t('SOURCE',p.source,palette.text)};
+ CATEGORY:t('CATEGORY',p.category,palette.secondary),HEADLINE:t('HEADLINE',p.headline,palette.text),
+ SUMMARY:t('SUMMARY',p.summary,palette.text),SOURCE:t('SOURCE',p.source,palette.text)};
 }
-async function backgroundFor({name,palette,kind,width,height,logo}){
+function decorations({width,height,kind,palette,style}){
+ const p=palette,s=checkedStyle(style),l=layout(kind,width,height,s);
+ const below=l.photo.y+l.photo.height;
+ if(s==='REVISTA'){
+  const corner=kind==='wide'?{x:70,y:188,w:930,h:775}:{x:l.photo.x-12,y:l.photo.y-12,w:l.photo.width+24,h:l.photo.height+24};
+  return `<rect x="${corner.x}" y="${corner.y}" width="${corner.w}" height="${corner.h}" fill="none" stroke="${p.accent}" stroke-width="6"/>
+  <rect x="${width-175}" y="${kind==='wide'?175:below+28}" width="110" height="17" fill="${p.accent}"/>
+  <text x="${width-85}" y="${height-47}" fill="${p.secondary}" font-family="DejaVu Serif" font-size="40" font-weight="700" text-anchor="end">07</text>`;
+ }
+ if(s==='PULSO'){
+  const y=kind==='wide'?height-110:below;
+  return `<path d="M0 ${y} L${Math.round(width*.16)} ${y} L${Math.round(width*.2)} ${y+25} L${Math.round(width*.7)} ${y+25} L${Math.round(width*.75)} ${y} L${width} ${y}" fill="none" stroke="${p.accent}" stroke-width="13"/>
+  <rect x="${width-40}" y="${kind==='wide'?180:below+58}" width="17" height="155" fill="${p.secondary}"/>
+  <path d="M0 ${height-40} L${Math.round(width*.42)} ${height-40} L${Math.round(width*.45)} ${height-18} L0 ${height-18} Z" fill="${p.accent}"/>`;
+ }
+ return `<path d="M0 ${below} L${Math.round(width*.18)} ${below} L${Math.round(width*.22)} ${below+17} L${Math.round(width*.55)} ${below+17}" fill="none" stroke="${p.accent}" stroke-width="11"/>
+ <rect x="${width-28}" y="${kind==='wide'?210:below+43}" width="13" height="145" fill="${p.accent}"/>`;
+}
+
+async function backgroundFor({name,palette,kind,width,height,logo,style='IMPACTO'}){
  const p=palette;
  const rects=`<rect width="${width}" height="${height}" fill="${p.background}"/>${kind==='wide'?'<rect x="960" y="140" width="960" height="940" fill="#ffffff"/>':''}<rect x="0" y="${height-28}" width="${width}" height="28" fill="${p.primary}"/><rect x="0" y="${height-33}" width="${width}" height="5" fill="${p.accent}"/>`;
- const buffer=svg(width,height,rects+brandHeader({name,width,height,palette,kind}));
+ const buffer=svg(width,height,rects+decorations({width,height,kind,palette,style})+brandHeader({name,width,height,palette,kind}));
  const base=await sharp(buffer).png().toBuffer();
  if(!logo)return base;
  // Replace the monogram badge, without touching the editable photo and text regions.
@@ -110,7 +144,7 @@ async function design({name,existingPalette={},focus='' }){
  const response=await callAI({system:'Eres diseñador de identidad de un medio informativo. Propón colores únicos y legibles, sin afirmar que hayas inspeccionado una página o logo real. Política editorial neutral. Responde JSON estricto con HEX de seis dígitos.',input:JSON.stringify({name:cleaned,focus,existingPalette:defaults}),jsonSchema:{name:'brand_draft',schema:{type:'object',additionalProperties:false,required:['primary','secondary','accent','style'],properties:{primary:{type:'string'},secondary:{type:'string'},accent:{type:'string'},style:{type:'string'}}}}});
  return{name:cleaned,palette:paletteFor({...defaults,...response}),style:String(response.style).slice(0,160),generatedBy:'AI',notice:'Identidad gráfica propuesta; el logo tipográfico y los fondos se construyen de modo reproducible.'};
 }
-async function buildTemplates({identityId,name,palette,revision,logo=null}){
+async function buildTemplates({identityId,name,palette,revision,logo=null,style='IMPACTO'}){
  // Validate contrast and both permanent brand assets before any template can become active.
  assertBrandContrast(palette);
  await brandImage({name,palette,logo},'profile');
@@ -118,8 +152,8 @@ async function buildTemplates({identityId,name,palette,revision,logo=null}){
  const definitions=[];
  for(const fmt of FORMATS){
   const code=`BRAND_${identityId.replace(/[^a-z0-9]/gi,'').slice(0,20).toUpperCase()}_${fmt.key}_V${revision}`;
-  const base=await backgroundFor({...fmt,name,palette,logo});
-  const template={code,name:`${name} · ${fmt.label} · v${revision}`,mediaIdentityId:identityId,renderer:'GENERIC_LAYERED',sourceType:'BUILT_IN',format:fmt.key,status:'READY',isActive:false,width:fmt.width,height:fmt.height,version:revision,baseImageMimeType:'image/png',baseImageData:base,layerMap:layerMapFor(fmt.kind,fmt.width,fmt.height,palette),configuration:{brandStudio:true,revision,compatibleFormats:[fmt.key],requiresRealPhoto:true}};
+  const base=await backgroundFor({...fmt,name,palette,logo,style});
+  const template={code,name:`${name} · ${fmt.label} · v${revision}`,mediaIdentityId:identityId,renderer:'GENERIC_LAYERED',sourceType:'BUILT_IN',format:fmt.key,status:'READY',isActive:false,width:fmt.width,height:fmt.height,version:revision,baseImageMimeType:'image/png',baseImageData:base,layerMap:layerMapFor(fmt.kind,fmt.width,fmt.height,palette,style),configuration:{brandStudio:true,designStyle:checkedStyle(style),revision,compatibleFormats:[fmt.key],requiresRealPhoto:true}};
   // Render full-size samples, using the same runtime code as the publishing pipeline.
   for(const text of ['Así se verá una noticia comprobada de la región','Autoridades informaron sobre medidas para mejorar los servicios públicos de la región durante esta semana']){
    const image=await renderTemplatePreview(template,{headline:text,summary:'Información verificada, con contexto y fuente consultable.',category:'ACTUALIDAD',source:'Medio de prueba'});
@@ -130,4 +164,4 @@ async function buildTemplates({identityId,name,palette,revision,logo=null}){
  }
  return definitions;
 }
-module.exports={FORMATS,paletteFor,design,brandImage,buildTemplates,normalizeLogo};
+module.exports={FORMATS,DESIGN_STYLES,checkedStyle,paletteFor,design,brandImage,buildTemplates,normalizeLogo};

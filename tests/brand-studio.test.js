@@ -54,3 +54,21 @@ test('Transparent wide logo does not paint black padding onto brand banner',asyn
  const i=offset(512,320);
  assert.deepEqual([...raw.data.subarray(i,i+3)],[25,59,87]);
 });
+
+test('Three compositions render consistently across all supported formats',async()=>{
+ const {DESIGN_STYLES}=require('../services/brand-studio');
+ const palette=paletteFor({primary:'#193B57',secondary:'#136BDF',accent:'#38C6DE'});
+ const signatures=new Set();
+ for(const style of DESIGN_STYLES){
+  const templates=await buildTemplates({identityId:'test-style-'+style.id,name:'Noti Siete',palette,revision:1,style:style.id});
+  assert.equal(templates.length,5);
+  for(const t of templates){
+   assert.equal(t.configuration.designStyle,style.id);
+   const image=await renderTemplatePreview(t,{headline:'Se presentan nuevos proyectos de movilidad y servicios para la comunidad'});
+   const m=await sharp(image).metadata();
+   assert.equal(m.width,t.width);assert.equal(m.height,t.height);
+  }
+  signatures.add((await sharp(templates[0].baseImageData).resize(200,250).png().toBuffer()).toString('base64'));
+ }
+ assert.equal(signatures.size,3,'Las composiciones no deben ser solamente recoloreos');
+});
