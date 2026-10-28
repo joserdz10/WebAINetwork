@@ -1,0 +1,23 @@
+name: Image performance validation
+on:
+  pull_request:
+    paths:
+      - 'services/content.js'
+      - 'server.js'
+      - 'public/app.js'
+      - 'tests/image-performance.test.js'
+      - 'package.json'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run db:generate
+      - run: npm run check
+      - run: node --test tests/image-performance.test.js
+      - run: npm run test:brand
