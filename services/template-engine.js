@@ -72,23 +72,54 @@ async function renderNorteEnAlertaFeed({photo,headline,category,summary,source})
  ]).png().toBuffer();
 }
 
+function fitTextBox(value,m,field){
+ const full=String(value||'').replace(/\s+/g,' ').trim();
+ const baseSize=Number(m.fontSize||24),maxLines=Number(m.maxLines||1),height=Number(m.height||baseSize*1.2);
+ function layout(text){
+  for(let size=baseSize;size>=Math.max(13,Math.round(baseSize*.52));size-=2){
+   const limit=Math.max(8,Math.floor(Number(m.width||300)/(size*.59)));
+   const lines=wrap(text,limit,maxLines);
+   if(lines.some(x=>x.endsWith('…')))continue;
+   const lineHeight=Math.round(size*1.15);
+   if(lines.length*lineHeight<=height)return{lines,fontSize:size,lineHeight};
+  }
+  return null;
+ }
+ const exact=layout(full);
+ if(exact)return{...exact,text:full,shortened:false};
+ if(field!=='SUMMARY')throw new Error(`VISUAL_TEXT_OVERFLOW_${field}: el texto no cabe; requiere una redacción editorial más corta`);
+ // Use only a complete sentence/clause already present in the verified summary.
+ // Never synthesize a new fact or display a trailing ellipsis.
+ const sentences=full.split(/(?<=[.!?])\s+/).filter(Boolean);
+ const candidates=[];
+ if(sentences.length>1)candidates.push(sentences[0]);
+ const clauses=full.split(/[,;:]\s+/).filter(Boolean);
+ if(clauses.length>1)candidates.push(clauses[0]);
+ // Shortest meaningful prefix: preferably end at a word boundary and preserve useful context.
+ const words=full.split(' ');
+ for(let count=Math.min(words.length,30);count>=6;count--){
+  const text=words.slice(0,count).join(' ').replace(/[,;:–-]\s*$/,'').trim();
+  // A partial sentence can misleadingly change meaning. Do not silently show it.
+  if(/[.!?]$/.test(text))candidates.push(text);
+ }
+ for(const candidate of [...new Set(candidates)]){
+  if(candidate.split(/\s+/).length<5)continue;
+  const ready=layout(candidate);
+  if(ready)return{...ready,text:candidate,shortened:true};
+ }
+ // Explicit neutral placeholder, not a purported summary of the story.
+ const placeholder='Más información en la publicación.';
+ const fallback=layout(placeholder);
+ if(fallback)return{...fallback,text:placeholder,shortened:true,placeholder:true};
+ throw new Error('VISUAL_TEXT_OVERFLOW_SUMMARY: no se pudo ajustar la plantilla con seguridad');
+}
 function textSvg(width,height,layerMap,data){
   const chunks=[];
   const values={HEADLINE:data.headline,CATEGORY:data.category,SUMMARY:data.summary,SOURCE:data.source};
   for(const [field,value] of Object.entries(values)){
     const m=layerMap?.[field]; if(!m||!value) continue;
-    let size=Number(m.fontSize||24), maxLines=Number(m.maxLines||1);
-    const allowedHeight=Number(m.height||size*1.2);
-    let lines=[],valid=false;
-    for(let trial=size;trial>=Math.max(13,Math.round(size*.56));trial-=2){
-      const chars=Math.max(8,Math.floor(Number(m.width||300)/(trial*.59)));
-      const candidate=wrap(value,chars,maxLines);
-      if(candidate.some(x=>x.endsWith('…')))continue;
-      if(candidate.length*Math.round(trial*1.15)>allowedHeight)continue;
-      size=trial;lines=candidate;valid=true;break;
-    }
-    if(!valid)throw new Error(`VISUAL_TEXT_OVERFLOW_${field}: el texto no cabe completo; acórtalo antes de publicar`);
-    const lineHeight=Math.round(size*1.15);
+    const fitted=fitTextBox(value,m,field);
+    const {lines,fontSize:size,lineHeight}=fitted;
     const x=Number(m.x??m.left??0), y=Number(m.y??m.top??0)+size;
     const anchor=m.align==='center'?'middle':m.align==='right'?'end':'start';
     const tx=m.align==='center'?x+Number(m.width||0)/2:m.align==='right'?x+Number(m.width||0):x;
@@ -181,4 +212,4 @@ async function renderTemplate(template,data){
  if(template?.renderer==='GENERIC_LAYERED')return renderGenericLayered(template,data);
  throw new Error('TEMPLATE_RENDERER_NOT_SUPPORTED');
 }
-module.exports={selectTemplate,renderTemplate,renderTemplatePreview,fitCaption};
+module.exports={selectTemplate,renderTemplate,renderTemplatePreview,fitCaption,fitTextBox};
