@@ -51,18 +51,21 @@ async function queueProduction(prisma,job,settings){
  if(c.metadata?.origin==='SPECIALIZED_WEB'&&c.metadata?.verification!=='OPERATOR_REVIEWED')continue;
  seen.add(fingerprint);eligible.push(c);
  }
+ // The quota applies across all states, not separately to each state.
+ const cycleStart=new Date(Math.floor(Date.now()/(settings.intervalMinutes*60000))*settings.intervalMinutes*60000);
+ let globallyQueued=await prisma.editorialJob.count({where:{kind:'PRODUCE',createdAt:{gte:cycleStart}}});
  let queued=0;
  for(const identity of identities){
- if(queued>=settings.globalCycleLimit)break;
+ if(globallyQueued>=settings.globalCycleLimit)break;
  const already=await prisma.editorialJob.count({where:{identityId:identity.id,kind:'PRODUCE',status:{in:['QUEUED','RUNNING']}}});
  const quota=Math.max(0,settings.maxPiecesPerIdentity-already);
  for(const candidate of eligible.slice(0,quota)){
- if(queued>=settings.globalCycleLimit)break;
+ if(globallyQueued>=settings.globalCycleLimit)break;
  const key=`produce:${candidate.id}:${identity.id}`;
  const exists=await prisma.editorialJob.findUnique({where:{dedupeKey:key},select:{id:true}});
  if(exists)continue;
  await enqueue(prisma,{key,kind:'PRODUCE',stateCode:job.stateCode,identityId:identity.id,payload:{candidateId:candidate.id}});
- queued++;
+ queued++;globallyQueued++;
  }
  }
  return queued;
