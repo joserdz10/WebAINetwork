@@ -86,7 +86,9 @@ async function backgroundFor({name,palette,kind,width,height,logo}){
  const base=await sharp(buffer).png().toBuffer();
  if(!logo)return base;
  // Replace the monogram badge, without touching the editable photo and text regions.
- return addLogo(base,logo,{x:43,y:25,width:100,height:102,padding:5});
+ const patch=svg(width,height,`<rect x="43" y="25" rx="15" width="100" height="102" fill="${palette.primary}"/>`);
+ const cleared=await sharp(base).composite([{input:patch,left:0,top:0}]).png().toBuffer();
+ return addLogo(cleared,logo,{x:43,y:25,width:100,height:102,padding:5});
 }
 function brandImageSvg({name,palette,variant}){
  const p=palette,abbr=initials(name),lines=brandLines(name,40);
