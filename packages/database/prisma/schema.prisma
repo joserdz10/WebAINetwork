@@ -163,6 +163,8 @@ model MediaIdentity {
   status          MediaIdentityStatus  @default(DRAFT)
   description     String?
   logoUrl         String?
+  brandLogoData   Bytes?
+  brandLogoMimeType String?
   websiteUrl      String?
   stateBrain      StateBrain           @relation(fields: [stateBrainId], references: [id], onDelete: Cascade)
   mediaDNA        MediaDNA?
