@@ -25,6 +25,25 @@ function assertBrandContrast(p){
  if(contrast(p.text,p.background)<4.5)throw new Error('BRAND_CONTRAST_INVALID: texto y fondo requieren contraste de al menos 4.5:1');
  if(contrast('#FFFFFF',p.primary)<4.5)throw new Error('BRAND_CONTRAST_INVALID: el color principal debe contrastar con los textos blancos de la cabecera');
 }
+async function normalizeLogo(data){
+ if(!data)return null;
+ if(typeof data!=='string'||data.length>8*1024*1024)throw new Error('BRAND_LOGO_TOO_LARGE');
+ const match=data.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
+ if(!match)throw new Error('BRAND_LOGO_FORMAT_INVALID: usa PNG, JPG o WebP');
+ const input=Buffer.from(match[2],'base64');
+ if(!input.length||input.length>4*1024*1024)throw new Error('BRAND_LOGO_TOO_LARGE: máximo 4 MB');
+ const image=sharp(input,{limitInputPixels:16000000});
+ const metadata=await image.metadata();
+ if(!['png','jpeg','webp'].includes(metadata.format)||metadata.width<128||metadata.height<128||metadata.width>4096||metadata.height>4096)throw new Error('BRAND_LOGO_DIMENSIONS_INVALID');
+ return image.rotate().ensureAlpha().resize(1024,1024,{fit:'inside',withoutEnlargement:true}).png().toBuffer();
+}
+async function addLogo(base,logo,{x,y,width,height,padding=0}){
+ if(!logo)return base;
+ const mark=await sharp(logo).resize(Math.max(1,width-2*padding),Math.max(1,height-2*padding),{fit:'contain'}).png().toBuffer();
+ const info=await sharp(mark).metadata();
+ const left=Math.round(x+(width-info.width)/2),top=Math.round(y+(height-info.height)/2);
+ return sharp(base).composite([{input:mark,left,top}]).png().toBuffer();
+}
 function svg(width,height,content){return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${content}</svg>`)}
 function brandLines(name,maxChars=31){
  const words=cleanName(name).split(' '),lines=[];let line='';
@@ -60,33 +79,46 @@ function layerMapFor(kind,width,height,palette){
  SUMMARY:t('SUMMARY',p.summary,palette.text),
  SOURCE:t('SOURCE',p.source,palette.text)};
 }
-async function backgroundFor({name,palette,kind,width,height}){
+async function backgroundFor({name,palette,kind,width,height,logo}){
  const p=palette;
  const rects=`<rect width="${width}" height="${height}" fill="${p.background}"/>${kind==='wide'?'<rect x="960" y="140" width="960" height="940" fill="#ffffff"/>':''}<rect x="0" y="${height-28}" width="${width}" height="28" fill="${p.primary}"/><rect x="0" y="${height-33}" width="${width}" height="5" fill="${p.accent}"/>`;
  const buffer=svg(width,height,rects+brandHeader({name,width,height,palette,kind}));
- return sharp(buffer).png().toBuffer();
+ const base=await sharp(buffer).png().toBuffer();
+ if(!logo)return base;
+ // Replace the monogram badge, without touching the editable photo and text regions.
+ const patch=svg(width,height,`<rect x="43" y="25" rx="15" width="100" height="102" fill="${palette.primary}"/>`);
+ const cleared=await sharp(base).composite([{input:patch,left:0,top:0}]).png().toBuffer();
+ return addLogo(cleared,logo,{x:43,y:25,width:100,height:102,padding:5});
 }
 function brandImageSvg({name,palette,variant}){
  const p=palette,abbr=initials(name),lines=brandLines(name,40);
  if(variant==='profile')return svg(1024,1024,`<rect width="1024" height="1024" rx="185" fill="${p.primary}"/><circle cx="512" cy="490" r="327" fill="${p.secondary}" opacity=".45"/><rect x="230" y="250" width="564" height="450" rx="95" fill="${p.accent}"/><text x="512" y="570" text-anchor="middle" fill="${p.primary}" font-family="DejaVu Sans" font-weight="700" font-size="${abbr.length===1?350:260}">${escapeXml(abbr)}</text><rect x="300" y="767" width="424" height="13" rx="6" fill="${p.accent}"/>`);
  return svg(1640,624,`<rect width="1640" height="624" fill="${p.primary}"/><rect x="0" y="570" width="1640" height="54" fill="${p.accent}"/><circle cx="255" cy="305" r="195" fill="${p.secondary}" opacity=".55"/><text x="255" y="375" text-anchor="middle" font-family="DejaVu Sans" fill="#ffffff" font-size="174" font-weight="700">${escapeXml(abbr)}</text>${lines.map((line,i)=>`<text x="505" y="${lines.length===1?305:270+i*65}" font-family="DejaVu Sans" font-size="40" font-weight="700" fill="#ffffff">${escapeXml(line)}</text>`).join('')}<text x="510" y="435" font-family="DejaVu Sans" font-size="32" fill="${p.accent}">INFORMACIÓN VERIFICABLE</text>`);
 }
-async function brandImage(data,variant){return sharp(brandImageSvg({...data,variant})).png().toBuffer()}
+async function brandImage(data,variant){
+ const base=await sharp(brandImageSvg({...data,variant})).png().toBuffer();
+ if(!data.logo)return base;
+ // Opaque brand badge prevents the placeholder initials appearing behind a transparent uploaded logo.
+ const badge=variant==='profile'?{x:230,y:250,width:564,height:450,padding:20}:{x:65,y:113,width:380,height:380,padding:20};
+ const cover=Buffer.from(`<svg width="${variant==='profile'?1024:1640}" height="${variant==='profile'?1024:624}" xmlns="http://www.w3.org/2000/svg"><rect x="${badge.x}" y="${badge.y}" rx="40" width="${badge.width}" height="${badge.height}" fill="${data.palette.primary}"/></svg>`);
+ const cleared=await sharp(base).composite([{input:cover,left:0,top:0}]).png().toBuffer();
+ return addLogo(cleared,data.logo,badge);
+}
 async function design({name,existingPalette={},focus='' }){
  const cleaned=cleanName(name);const defaults=paletteFor(existingPalette);
  if(!hasAI())return{name:cleaned,palette:defaults,style:'Editorial contemporáneo',generatedBy:'BASE',notice:'Propuesta basada en colores actuales; IA no configurada.'};
  const response=await callAI({system:'Eres diseñador de identidad de un medio informativo. Propón colores únicos y legibles, sin afirmar que hayas inspeccionado una página o logo real. Política editorial neutral. Responde JSON estricto con HEX de seis dígitos.',input:JSON.stringify({name:cleaned,focus,existingPalette:defaults}),jsonSchema:{name:'brand_draft',schema:{type:'object',additionalProperties:false,required:['primary','secondary','accent','style'],properties:{primary:{type:'string'},secondary:{type:'string'},accent:{type:'string'},style:{type:'string'}}}}});
  return{name:cleaned,palette:paletteFor({...defaults,...response}),style:String(response.style).slice(0,160),generatedBy:'AI',notice:'Identidad gráfica propuesta; el logo tipográfico y los fondos se construyen de modo reproducible.'};
 }
-async function buildTemplates({identityId,name,palette,revision}){
+async function buildTemplates({identityId,name,palette,revision,logo=null}){
  // Validate contrast and both permanent brand assets before any template can become active.
  assertBrandContrast(palette);
- await brandImage({name,palette},'profile');
- await brandImage({name,palette},'cover');
+ await brandImage({name,palette,logo},'profile');
+ await brandImage({name,palette,logo},'cover');
  const definitions=[];
  for(const fmt of FORMATS){
   const code=`BRAND_${identityId.replace(/[^a-z0-9]/gi,'').slice(0,20).toUpperCase()}_${fmt.key}_V${revision}`;
-  const base=await backgroundFor({...fmt,name,palette});
+  const base=await backgroundFor({...fmt,name,palette,logo});
   const template={code,name:`${name} · ${fmt.label} · v${revision}`,mediaIdentityId:identityId,renderer:'GENERIC_LAYERED',sourceType:'BUILT_IN',format:fmt.key,status:'READY',isActive:false,width:fmt.width,height:fmt.height,version:revision,baseImageMimeType:'image/png',baseImageData:base,layerMap:layerMapFor(fmt.kind,fmt.width,fmt.height,palette),configuration:{brandStudio:true,revision,compatibleFormats:[fmt.key],requiresRealPhoto:true}};
   // Render full-size samples, using the same runtime code as the publishing pipeline.
   for(const text of ['Así se verá una noticia comprobada de la región','Autoridades informaron sobre medidas para mejorar los servicios públicos de la región durante esta semana']){
@@ -98,4 +130,4 @@ async function buildTemplates({identityId,name,palette,revision}){
  }
  return definitions;
 }
-module.exports={FORMATS,paletteFor,design,brandImage,buildTemplates};
+module.exports={FORMATS,paletteFor,design,brandImage,buildTemplates,normalizeLogo};

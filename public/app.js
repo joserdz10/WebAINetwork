@@ -195,11 +195,12 @@ async function applyIdentityStudioProposal(){
 }
 let brandStudioDraft=null;
 let brandPreviewPassed=false;
+let brandLogoData=null;
 async function openBrandStudio(id){
  try{
   const identity=state.identities.find(i=>i.id===id);
   if(!identity)throw new Error('Identidad no encontrada en el estado actual.');
-  brandStudioDraft=null;brandPreviewPassed=false;
+  brandStudioDraft=null;brandPreviewPassed=false;brandLogoData=null;
   modal('AI Brand Studio · '+identity.name,`<p class="muted mini">Genera una propuesta de identidad gráfica. Las plantillas activas se conservan hasta que apruebes la nueva marca y pase las pruebas automáticas.</p><div class="field"><label>Orientación creativa (opcional)</label><input id="brand-focus" placeholder="Ej. periodismo ciudadano, moderno y cercano"></div><button type="button" class="cta" onclick="generateBrandStudio('${esc(id)}')">✦ Generar identidad gráfica</button><div id="brand-result"></div>`);
  }catch(e){flash(e.message,'err')}
 }
@@ -208,8 +209,21 @@ async function generateBrandStudio(id){
   const data=await api('/api/identities/'+encodeURIComponent(id)+'/brand/propose',{method:'POST',body:JSON.stringify({focus:val('brand-focus')})});
   brandStudioDraft={...data,identityId:id};brandPreviewPassed=false;
   const target=document.getElementById('brand-result');
-  target.innerHTML=`<div class="card" style="margin-top:16px"><h3>Vista previa de la marca</h3><p class="muted mini">${esc(data.notice||'Revisa la propuesta antes de activarla.')}</p><div class="image-preview" style="max-width:220px;margin:12px 0"><img src="${data.preview}" alt="Icono de marca propuesto"></div><div class="field"><label>Estilo sugerido</label><input id="brand-style" value="${esc(data.style)}" disabled></div><div class="form-grid"><div class="field"><label>Color principal</label><input id="brand-primary" value="${esc(data.palette.primary)}"></div><div class="field"><label>Color secundario</label><input id="brand-secondary" value="${esc(data.palette.secondary)}"></div><div class="field"><label>Color acento</label><input id="brand-accent" value="${esc(data.palette.accent)}"></div><div class="field"><label>Fondo</label><input id="brand-background" value="${esc(data.palette.background)}"></div><div class="field"><label>Texto</label><input id="brand-text" value="${esc(data.palette.text)}"></div></div><div class="empty-note">Se prepararán plantillas reales para Facebook e Instagram (feed 4:5, historias 9:16 y gráfico horizontal 16:9). Cada formato se probará antes de activar. No se reemplazará ninguna foto periodística por una imagen sintética.</div><button type="button" class="cta secondary" onclick="previewBrandStudio()">Previsualizar y validar los 5 formatos</button><div id="brand-previews"></div><label class="template-toggle"><input type="checkbox" id="brand-confirm"> Apruebo sustituir las plantillas activas de estos formatos por la nueva identidad gráfica, después de validar los diseños.</label><div style="margin-top:12px"><button type="button" class="cta" onclick="activateBrandStudio()">Validar y activar identidad gráfica</button></div></div>`;
+  target.innerHTML=`<div class="card" style="margin-top:16px"><h3>Vista previa de la marca</h3><p class="muted mini">${esc(data.notice||'Revisa la propuesta antes de activarla.')}</p><div class="image-preview" style="max-width:220px;margin:12px 0"><img src="${data.preview}" alt="Icono de marca propuesto"></div><div class="field"><label>Logotipo propio (opcional: PNG, JPG o WebP, máximo 4 MB)</label><input id="brand-logo-file" type="file" accept="image/png,image/jpeg,image/webp" onchange="handleBrandLogoFile(this)"><div class="mini muted">Si no subes uno nuevo, se conservará el logotipo previamente aprobado, si existe.</div></div><div id="brand-logo-preview"></div><div class="field"><label>Estilo sugerido</label><input id="brand-style" value="${esc(data.style)}" disabled></div><div class="form-grid"><div class="field"><label>Color principal</label><input id="brand-primary" value="${esc(data.palette.primary)}"></div><div class="field"><label>Color secundario</label><input id="brand-secondary" value="${esc(data.palette.secondary)}"></div><div class="field"><label>Color acento</label><input id="brand-accent" value="${esc(data.palette.accent)}"></div><div class="field"><label>Fondo</label><input id="brand-background" value="${esc(data.palette.background)}"></div><div class="field"><label>Texto</label><input id="brand-text" value="${esc(data.palette.text)}"></div></div><div class="empty-note">Se prepararán plantillas reales para Facebook e Instagram (feed 4:5, historias 9:16 y gráfico horizontal 16:9). Cada formato se probará antes de activar. No se reemplazará ninguna foto periodística por una imagen sintética.</div><button type="button" class="cta secondary" onclick="previewBrandStudio()">Previsualizar y validar los 5 formatos</button><div id="brand-previews"></div><label class="template-toggle"><input type="checkbox" id="brand-confirm"> Apruebo sustituir las plantillas activas de estos formatos por la nueva identidad gráfica, después de validar los diseños.</label><div style="margin-top:12px"><button type="button" class="cta" onclick="activateBrandStudio()">Validar y activar identidad gráfica</button></div></div>`;
  }catch(e){flash('No se pudo generar la propuesta: '+e.message,'err')}
+}
+async function handleBrandLogoFile(input){
+ const file=input?.files?.[0];brandPreviewPassed=false;brandLogoData=null;
+ const target=document.getElementById('brand-logo-preview');if(target)target.innerHTML='';
+ if(!file)return;
+ if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>4*1024*1024||file.size===0){input.value='';return flash('El logotipo debe ser PNG, JPG o WebP y pesar máximo 4 MB.','err')}
+ try{
+  const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('No se pudo leer el archivo'));reader.readAsDataURL(file)});
+  const image=new Image();image.src=data;await image.decode();
+  if(image.naturalWidth<128||image.naturalHeight<128||image.naturalWidth>4096||image.naturalHeight>4096)throw new Error('El logotipo debe medir entre 128 y 4096 píxeles por lado.');
+  brandLogoData=data;
+  if(target)target.innerHTML=`<div class="image-preview" style="max-width:180px;margin:10px 0"><img src="${data}" alt="Logotipo manual seleccionado"></div><div class="mini muted">Logo cargado. Previsualiza los cinco formatos para ver su integración.</div>`;
+ }catch(e){input.value='';flash(e.message,'err')}
 }
 function brandStudioPalette(){
  const keys=['primary','secondary','accent','background','text'],palette={};
@@ -220,8 +234,8 @@ async function previewBrandStudio(){
  if(!brandStudioDraft)return flash('Primero genera una propuesta.','err');
  try{
   const palette=brandStudioPalette();
-  const r=await api('/api/identities/'+encodeURIComponent(brandStudioDraft.identityId)+'/brand/preview',{method:'POST',body:JSON.stringify({palette})});
-  brandPreviewPassed=JSON.stringify(palette);
+  const r=await api('/api/identities/'+encodeURIComponent(brandStudioDraft.identityId)+'/brand/preview',{method:'POST',body:JSON.stringify({palette,logoData:brandLogoData})});
+  brandPreviewPassed=JSON.stringify(palette)+'|'+(brandLogoData||'');
   const target=document.getElementById('brand-previews');
   target.innerHTML=`<div class="grid three-col" style="margin-top:12px">${(r.formats||[]).map(f=>`<div class="card" style="padding:10px"><img src="${f.preview}" loading="lazy" style="display:block;max-width:100%;height:auto" alt="Plantilla de prueba ${esc(f.format)}"><div class="mini muted">${esc(f.format)} · ${f.width} × ${f.height}</div></div>`).join('')}</div><div class="empty-note">Las muestras pasaron el motor real de composición. Revisa los diseños antes de activarlos.</div>`;
   flash('Previsualizaciones generadas y validadas.');
@@ -231,10 +245,10 @@ async function activateBrandStudio(){
  const d=brandStudioDraft;if(!d)return flash('Genera primero la propuesta.','err');
  if(!document.getElementById('brand-confirm')?.checked)return flash('Debes aprobar explícitamente la nueva identidad gráfica.','err');
  let palette;try{palette=brandStudioPalette()}catch(e){return flash(e.message,'err')}
- if(brandPreviewPassed!==JSON.stringify(palette))return flash('Previsualiza y valida nuevamente los formatos antes de activar los colores seleccionados.','err');
+ if(brandPreviewPassed!==JSON.stringify(palette)+'|'+(brandLogoData||''))return flash('Previsualiza y valida nuevamente los formatos antes de activar los colores seleccionados.','err');
  if(!confirm('¿Activar el nuevo diseño en las plantillas de esta identidad? Se conservará el historial de las anteriores.'))return;
  try{
-  const result=await api('/api/identities/'+encodeURIComponent(d.identityId)+'/brand/activate',{method:'POST',body:JSON.stringify({confirm:true,palette})});
+  const result=await api('/api/identities/'+encodeURIComponent(d.identityId)+'/brand/activate',{method:'POST',body:JSON.stringify({confirm:true,palette,logoData:brandLogoData})});
   document.querySelector('#modal').close();state.bootstrap=null;
   flash('Marca activada: '+result.templates.length+' plantillas validadas.');go('identities');
  }catch(e){flash('No se activó la marca: '+e.message,'err')}
@@ -517,7 +531,7 @@ async function newChannel(){const ids=await api(`/api/identities?state=${state.w
 async function saveChannel(){try{await api('/api/channels',{method:'POST',body:JSON.stringify({mediaIdentityId:val('ch-id'),platform:val('ch-platform'),name:val('ch-name'),externalAccountId:val('ch-ext')||null,connectionStatus:val('ch-ext')?'CONNECTED':'PENDING'})});document.querySelector('#modal').close();flash('Canal guardado.');go('channels')}catch(e){flash(e.message,'err')}}
 function val(id){return document.getElementById(id)?.value||''}
 
-window.go=go;Object.assign(window,{reviewSpecializedFinding,chooseSpecializedPreset,runSpecializedSearch,toggleSource,autoDiscoverSources,previewRecommendedSources,importRecommendedSources,newStateBrain,saveStateBrain,configureStateBrain,saveStateBrainSettings,openStateWorkspace,switchNewsState,setNewsHours,runDiscovery,promoteCandidate,discardCandidate,analyzeStory,generateContent,approvePiece,imagePiece,drivePiece,publishDialog,publishNow,resolveError,newIdentity,saveIdentity,openBrandStudio,generateBrandStudio,previewBrandStudio,activateBrandStudio,openIdentityStudio,identityStudioAccountChanged,generateIdentityStudioProposal,applyIdentityStudioProposal,editDNA,showTemplates,openTemplatePreview,uploadTemplate,editTemplateMapping,saveTemplateMapping,activateTemplate,addTemplateField,dragTemplateField,dropTemplateField,selectTemplateField,startTemplateBoxPointer,setTemplateProp,removeTemplateField,showDnaTab,saveDNA,saveVisualDNA,newCatalog,saveCatalog,deleteCatalog,startMetaOAuth,connectMetaOAuthPage,openMetaConnect,openMetaPageTokenMode,connectMetaPageToken,openMetaDiscoveryMode,discoverMetaAccounts,connectMetaPage,testChannel,disconnectChannel,newChannel,saveChannel});
+window.go=go;Object.assign(window,{reviewSpecializedFinding,chooseSpecializedPreset,runSpecializedSearch,toggleSource,autoDiscoverSources,previewRecommendedSources,importRecommendedSources,newStateBrain,saveStateBrain,configureStateBrain,saveStateBrainSettings,openStateWorkspace,switchNewsState,setNewsHours,runDiscovery,promoteCandidate,discardCandidate,analyzeStory,generateContent,approvePiece,imagePiece,drivePiece,publishDialog,publishNow,resolveError,newIdentity,saveIdentity,openBrandStudio,generateBrandStudio,handleBrandLogoFile,previewBrandStudio,activateBrandStudio,openIdentityStudio,identityStudioAccountChanged,generateIdentityStudioProposal,applyIdentityStudioProposal,editDNA,showTemplates,openTemplatePreview,uploadTemplate,editTemplateMapping,saveTemplateMapping,activateTemplate,addTemplateField,dragTemplateField,dropTemplateField,selectTemplateField,startTemplateBoxPointer,setTemplateProp,removeTemplateField,showDnaTab,saveDNA,saveVisualDNA,newCatalog,saveCatalog,deleteCatalog,startMetaOAuth,connectMetaOAuthPage,openMetaConnect,openMetaPageTokenMode,connectMetaPageToken,openMetaDiscoveryMode,discoverMetaAccounts,connectMetaPage,testChannel,disconnectChannel,newChannel,saveChannel});
 
 document.querySelector('#workspace-select').onchange=e=>{state.workspace=e.target.value;state.bootstrap=null;go(state.page)};
 document.querySelector('#refresh-btn').onclick=async()=>{state.bootstrap=null;try{await refreshWorkspaces()}catch(e){flash(e.message,'err')}go(state.page)};

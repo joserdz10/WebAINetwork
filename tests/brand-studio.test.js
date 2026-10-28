@@ -23,3 +23,22 @@ test('Brand template rejects headline that cannot fit without truncation',async(
  const [template]=await buildTemplates({identityId:'testidentity456',name:'Noticias del Día',palette:paletteFor(),revision:1});
  await assert.rejects(renderTemplatePreview(template,{headline:Array(100).fill('Una noticia extremadamente extensa').join(' ')}),/VISUAL_TEXT_OVERFLOW_HEADLINE/);
 });
+
+test('Manual PNG logo is preserved across all generated templates and rejects unsupported files',async()=>{
+ const {normalizeLogo}=require('../services/brand-studio');
+ const source=await sharp({create:{width:512,height:512,channels:4,background:{r:10,g:160,b:180,alpha:0}}}).composite([{input:Buffer.from('<svg width="512" height="512"><circle cx="256" cy="256" r="180" fill="#04CFEF"/></svg>'),left:0,top:0}]).png().toBuffer();
+ const logo=await normalizeLogo('data:image/png;base64,'+source.toString('base64'));
+ assert.equal((await sharp(logo).metadata()).format,'png');
+ const palette=paletteFor({primary:'#142A50',secondary:'#136BDF',accent:'#38C6DE'});
+ const {brandImage}=require('../services/brand-studio');
+ const profile=await brandImage({name:'Prueba Visual',palette,logo},'profile');
+ assert.equal((await sharp(profile).metadata()).width,1024);
+ const templates=await buildTemplates({identityId:'logo-test-123',name:'Prueba Visual',palette,revision:2,logo});
+ assert.equal(templates.length,5);
+ for(const t of templates){
+  const image=await renderTemplatePreview(t,{headline:'La comunidad presenta nuevas iniciativas para mejorar su entorno'});
+  assert.equal((await sharp(image).metadata()).height,t.height);
+ }
+ await assert.rejects(normalizeLogo('data:image/svg+xml;base64,PHN2Zz4='),/BRAND_LOGO_FORMAT_INVALID/);
+ await assert.rejects(normalizeLogo('data:image/png;base64,'+Buffer.alloc(5*1024*1024).toString('base64')),/BRAND_LOGO_TOO_LARGE/);
+});

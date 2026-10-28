@@ -1,0 +1,27 @@
+name: Brand Studio logo validation
+on:
+  pull_request:
+    paths:
+      - 'services/brand-studio.js'
+      - 'tests/brand-studio.test.js'
+      - 'server.js'
+      - 'public/app.js'
+      - 'packages/database/prisma/schema.prisma'
+      - 'package.json'
+  workflow_dispatch:
+jobs:
+  brand-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+      - name: Generate Prisma
+        run: npm run db:generate
+      - name: Validate JS
+        run: npm run check
+      - name: Test logo & templates
+        run: npm run test:brand
