@@ -12,6 +12,7 @@ const {specializedSearch}=require('./services/specialized-search');
 const {runDiscovery,candidateToStory}=require('./services/discovery');
 const {analyzeStory}=require('./services/story-intelligence');
 const {generatePieces,generatePieceImage}=require('./services/content');
+const editorialAutomation=require('./services/editorial-automation');
 const {publishPiece,savePieceToDrive,schedulePiece,processScheduled}=require('./services/publication');
 const {slugify,propose:proposeIdentity}=require('./services/identity-studio');
 const {handleTelegramUpdate}=require('./services/telegram-operator');
@@ -44,7 +45,7 @@ function dbGuard(req,res,next){if(!databaseReady)return res.status(503).json({ok
 function stateWhere(code){return code?{stateBrain:{stateCode:code}}:{}}
 function validEnum(value,allowed,def){return allowed.includes(value)?value:def}
 
-app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.10.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),metaOAuthConfigured:metaOauth.configured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
+app.get('/api/health',async(_req,res)=>{let db=false;if(databaseReady)try{await prisma.$queryRaw`SELECT 1`;db=true}catch{}res.json({ok:true,version:'1.11.0',databaseConfigured:hasDatabase,databaseReady:db,aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaConfigured:Boolean(process.env.META_ACCESS_TOKEN)||socialVaultConfigured(),socialVaultConfigured:socialVaultConfigured(),metaOAuthConfigured:metaOauth.configured(),driveConfigured:Boolean(process.env.GOOGLE_DRIVE_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN),timestamp:new Date().toISOString()})});
 app.get('/media/:pieceId/:signature.png',async(req,res)=>{try{if(!databaseReady)return res.status(503).send('Base de datos no disponible');if(!socialVaultConfigured()||!verifyMediaId(req.params.pieceId,req.params.signature))return res.status(403).send('Firma no válida');const piece=await prisma.contentPiece.findUnique({where:{id:req.params.pieceId},select:{imageUrl:true}});if(!piece?.imageUrl)return res.status(404).send('Imagen no disponible');const value=piece.imageUrl;if(value.startsWith('data:image/')){const match=value.match(/^data:([^;]+);base64,(.+)$/s);if(!match)return res.status(422).send('Formato no válido');const buffer=Buffer.from(match[2],'base64');res.setHeader('Content-Type',match[1]);res.setHeader('Content-Length',String(buffer.length));res.setHeader('Cache-Control','public,max-age=3600');return res.end(buffer)}if(/^https?:\/\//i.test(value))return res.redirect(302,value);return res.status(422).send('Formato no compatible')}catch(e){console.error(e);res.status(500).send('Error interno')}});
 app.get('/api/meta/oauth/start',metaOauth.start);
 app.get('/api/meta/oauth/callback',metaOauth.callback);
@@ -332,6 +333,25 @@ app.patch('/api/stories/:publicId',async(req,res)=>{try{const id=Number(req.para
 app.patch('/api/stories/:publicId/status',async(req,res)=>{try{const status=req.body.status;const allowed=['DISCOVERED','ANALYZING','READY','GENERATING','CONTENT_READY','APPROVED','PUBLISHED','REJECTED','ARCHIVED'];if(!allowed.includes(status))return fail(res,new Error('INVALID_STATUS'),400);res.json({ok:true,data:await prisma.story.update({where:{publicId:Number(req.params.publicId)},data:{status,readyAt:status==='READY'?new Date():undefined,publishedAt:status==='PUBLISHED'?new Date():undefined}})})}catch(e){fail(res,e)}});
 app.post('/api/stories/:publicId/analyze',async(req,res)=>{try{res.json({ok:true,data:await analyzeStory(prisma,Number(req.params.publicId))})}catch(e){fail(res,e)}});
 
+app.get('/api/editorial-automation',async(req,res)=>{try{res.json({ok:true,data:await editorialAutomation.overview(prisma,req.query.state||null)})}catch(e){fail(res,e)}});
+app.put('/api/editorial-automation/config',async(req,res)=>{try{const data=await editorialAutomation.setConfig(prisma,req.body||{});res.json({ok:true,data})}catch(e){fail(res,e,400)}});
+app.post('/api/editorial-automation/run',async(req,res)=>{try{
+ const settings=await editorialAutomation.getConfig(prisma);
+ const stateCode=String(req.body?.stateCode||'').trim().toUpperCase();
+ if(!stateCode)return fail(res,new Error('STATE_CODE_REQUIRED'),400);
+ const brain=await prisma.stateBrain.findFirst({where:{stateCode,status:'ACTIVE'},select:{id:true}});
+ if(!brain)return fail(res,new Error('ACTIVE_STATE_NOT_FOUND'),404);
+ const key='discovery:'+stateCode+':manual:'+Date.now();
+ const job=await editorialAutomation.enqueue(prisma,{key,kind:'DISCOVERY',stateCode,payload:{hours:settings.lookbackHours}});
+ res.status(202).json({ok:true,data:{jobId:job.id,status:'QUEUED'}});
+}catch(e){fail(res,e)}});
+app.post('/api/editorial-automation/jobs/:id/retry',async(req,res)=>{try{
+ const job=await prisma.editorialJob.findUnique({where:{id:req.params.id}});
+ if(!job||job.status!=='FAILED')return fail(res,new Error('FAILED_JOB_NOT_FOUND'),404);
+ const row=await prisma.editorialJob.update({where:{id:job.id},data:{status:'QUEUED',attempts:0,lockedAt:null,lastError:null,runAt:new Date()}});
+ res.json({ok:true,data:{id:row.id,status:row.status}});
+}catch(e){fail(res,e)}});
+
 app.get('/api/content-pieces',async(req,res)=>{try{const where={};if(req.query.state)where.story={stateBrain:{stateCode:req.query.state}};if(req.query.status)where.status=req.query.status;// Avoid transferring hundreds of multi-megabyte data:PNG strings from PostgreSQL.
 const rows=await prisma.contentPiece.findMany({where,omit:{imageUrl:true},include:{story:true,mediaIdentity:{omit:{brandLogoData:true}},publications:{include:{socialAccount:{select:socialAccountSelect}}}},orderBy:{createdAt:'desc'},take:250});
 const ids=rows.map(r=>r.id);
@@ -393,9 +413,14 @@ app.put('/api/settings/:key',async(req,res)=>{try{res.json({ok:true,data:await p
 app.use(express.static(publicDir));
 app.use((_req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 prepareDatabase().finally(()=>{
-  app.listen(port,()=>console.log(`AI Media Network v1.6.9 en puerto ${port}`));
+  app.listen(port,()=>console.log(`AI Media Network v1.11.0 en puerto ${port}`));
   setInterval(()=>{if(databaseReady)processScheduled(prisma).catch(e=>console.error('Scheduled worker',e.message))},60000);
   const every=Number(process.env.AUTO_DISCOVERY_INTERVAL_MINUTES||0);
-  if(every>0)setInterval(()=>{if(databaseReady)runDiscovery(prisma,process.env.AUTO_DISCOVERY_STATE||'NL',{hours:Number(process.env.AUTO_DISCOVERY_HOURS||6)}).catch(e=>console.error('Auto discovery',e.message))},every*60000);
+  // Legacy single-state auto discovery is replaced by the cross-state editorial queue.
+  // Start only after Prisma schema sync, and never auto-publish to social channels.
+  if(databaseReady){
+    setTimeout(()=>editorialAutomation.tick(prisma).catch(e=>console.error('Editorial startup:',e.message)),3000);
+    setInterval(()=>editorialAutomation.tick(prisma).catch(e=>console.error('Editorial worker:',e.message)),15000);
+  }
 });
 process.on('SIGTERM',async()=>{await prisma.$disconnect();process.exit(0)});process.on('SIGINT',async()=>{await prisma.$disconnect();process.exit(0)});
