@@ -42,3 +42,15 @@ test('Manual PNG logo is preserved across all generated templates and rejects un
  await assert.rejects(normalizeLogo('data:image/svg+xml;base64,PHN2Zz4='),/BRAND_LOGO_FORMAT_INVALID/);
  await assert.rejects(normalizeLogo('data:image/png;base64,'+Buffer.alloc(5*1024*1024).toString('base64')),/BRAND_LOGO_TOO_LARGE/);
 });
+
+test('Transparent wide logo does not paint black padding onto brand banner',async()=>{
+ const {brandImage}=require('../services/brand-studio');
+ const wide=await sharp({create:{width:1000,height:200,channels:4,background:{r:0,g:0,b:0,alpha:0}}}).composite([{input:Buffer.from('<svg width="1000" height="200"><rect x="150" y="50" width="700" height="100" fill="#ffffff"/></svg>'),left:0,top:0}]).png().toBuffer();
+ const palette=paletteFor({primary:'#193B57',secondary:'#136BDF',accent:'#38C6DE'});
+ const profile=await brandImage({name:'NotiSiete',palette,logo:wide},'profile');
+ const raw=await sharp(profile).raw().toBuffer({resolveWithObject:true});
+ const offset=(x,y)=>(y*raw.info.width+x)*raw.info.channels;
+ // The upper part of the uploaded wide logo is transparent and must show the approved blue badge, not black.
+ const i=offset(512,320);
+ assert.deepEqual([...raw.data.subarray(i,i+3)],[25,59,87]);
+});
