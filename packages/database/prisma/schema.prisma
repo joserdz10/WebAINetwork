@@ -629,3 +629,26 @@ model AppSetting {
   description String?
   updatedAt   DateTime @updatedAt
 }
+
+model EditorialJob {
+  id          String   @id @default(cuid())
+  dedupeKey   String   @unique
+  kind        String
+  status      String   @default("QUEUED")
+  stateCode   String?
+  identityId  String?
+  storyId     String?
+  payload     Json?
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(2)
+  runAt       DateTime @default(now())
+  lockedAt    DateTime?
+  finishedAt  DateTime?
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, runAt])
+  @@index([stateCode, createdAt])
+  @@index([identityId, status])
+}
