@@ -6,6 +6,7 @@ on:
       - public/app.js
       - server.js
       - package.json
+      - tests/visual-policy.test.js
   workflow_dispatch:
 jobs:
   validate:
