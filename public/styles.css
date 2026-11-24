@@ -36,3 +36,12 @@ button,select{font:inherit}.app-shell{min-height:100vh;display:grid;grid-templat
 @media(max-width:760px){.meta-page,.meta-user{align-items:flex-start;flex-direction:column}.meta-page-actions{width:100%}}
 
 .meta-connect-modes{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.meta-mode-card{border:1px solid var(--line);background:#0d1218;color:var(--text);border-radius:12px;padding:18px;text-align:left;cursor:pointer}.meta-mode-card:hover{border-color:var(--accent)}.meta-mode-card b,.meta-mode-card span{display:block}.meta-mode-card b{font-size:13px;margin-bottom:7px}.meta-mode-card span{font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:760px){.meta-connect-modes{grid-template-columns:1fr}}
+
+/* v1.11.1: sidebar scroll independent from the workspace content. */
+.sidebar{min-height:0;overflow:hidden}
+.sidebar .brand,.sidebar .sidebar-footer{flex-shrink:0}
+.sidebar #nav{display:block;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#465361 transparent;padding-bottom:16px}
+.sidebar #nav::-webkit-scrollbar{width:6px}
+.sidebar #nav::-webkit-scrollbar-thumb{background:#465361;border-radius:8px}
+.sidebar #nav::-webkit-scrollbar-track{background:transparent}
+@media(max-width:760px){.sidebar{overflow:visible;height:auto;max-height:none}.sidebar #nav{display:block;flex:none;max-height:min(62vh,480px);overflow-y:auto}.sidebar .sidebar-footer{display:flex}}
