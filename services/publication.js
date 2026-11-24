@@ -17,29 +17,60 @@ function publicImageUrl(piece){
   const base=publicBaseUrl();if(!base)return null;
   return `${base}/media/${encodeURIComponent(piece.id)}/${signMediaId(piece.id)}.png`;
 }
+function publicationErrorCode(error){return String(error?.message||'PUBLICATION_FAILED').split(':')[0].slice(0,120)}
+function publicationErrorMessage(error){return String(error?.message||'Error de publicación').slice(0,1800)}
 async function publishPiece(prisma,{pieceId,accountId}){
-  const piece=await prisma.contentPiece.findUnique({where:{id:pieceId},include:{story:{include:{stateBrain:true}},mediaIdentity:true}});
-  const account=await prisma.socialAccount.findUnique({where:{id:accountId}});
-  if(!piece||!account) throw new Error('PIECE_OR_ACCOUNT_NOT_FOUND');
-  if(!account.isActive||account.connectionStatus!=='CONNECTED')throw new Error('SOCIAL_ACCOUNT_NOT_CONNECTED');
-  if(!['APPROVED','SCHEDULED'].includes(piece.status))throw new Error('CONTENT_MUST_BE_APPROVED_BEFORE_PUBLISHING');
-  if(VISUAL_TYPES.has(piece.type)){assertEditorialQuality({title:piece.story.title,summary:piece.story.summary,stateCode:piece.story.stateBrain?.stateCode});const m=piece.metadata||{};validateVisual({caption:m.visualCaption||safeCaption(piece.headline),summary:m.visualSummary||context(piece.story,piece.copy),source:m.visualSource,imageUrl:piece.imageUrl,metadata:m});}
-  const publication=await prisma.publication.create({data:{contentPieceId:piece.id,socialAccountId:account.id,status:'PUBLISHING',attemptCount:1}});
+  if(!pieceId||!accountId)throw new Error('PIECE_AND_ACCOUNT_REQUIRED');
+  const [piece,account]=await Promise.all([
+    prisma.contentPiece.findUnique({where:{id:pieceId},include:{story:{include:{stateBrain:true}},mediaIdentity:true}}),
+    prisma.socialAccount.findUnique({where:{id:accountId}})
+  ]);
+  if(!piece||!account)throw new Error('PIECE_OR_ACCOUNT_NOT_FOUND');
+  // Never send an identity's editorial content to a different identity's page.
+  if(piece.mediaIdentityId!==account.mediaIdentityId)throw new Error('CHANNEL_IDENTITY_MISMATCH: Este canal no pertenece a la identidad de la pieza');
+  // Disallow duplicate attempts after Meta has already accepted a post.
+  const already=await prisma.publication.findFirst({where:{contentPieceId:piece.id,socialAccountId:account.id,status:'PUBLISHED'},orderBy:{createdAt:'desc'}});
+  if(already){const e=new Error('ALREADY_PUBLISHED_TO_CHANNEL: Esta pieza ya fue publicada en este canal');e.status=409;throw e}
+  const pending=await prisma.publication.findFirst({where:{contentPieceId:piece.id,socialAccountId:account.id,status:'PUBLISHING',createdAt:{gte:new Date(Date.now()-10*60000)}}});
+  if(pending){const e=new Error('PUBLICATION_IN_PROGRESS: Ya existe un envío en curso. Revisa el historial antes de intentarlo otra vez');e.status=409;throw e}
+
+  // Record BEFORE editorial checks so the Publications page captures rejected attempts.
+  const publication=await prisma.publication.create({data:{
+    contentPieceId:piece.id,socialAccountId:account.id,status:'PUBLISHING',attemptCount:1,
+    metadata:{phase:'PREFLIGHT',pieceStatus:piece.status,platform:account.platform}
+  }});
   try{
+    if(!account.isActive||account.connectionStatus!=='CONNECTED')throw new Error('SOCIAL_ACCOUNT_NOT_CONNECTED');
+    if(!['APPROVED','SCHEDULED'].includes(piece.status))throw new Error('CONTENT_MUST_BE_APPROVED_BEFORE_PUBLISHING: Primero aprueba esta pieza');
+    if(VISUAL_TYPES.has(piece.type)){
+      assertEditorialQuality({title:piece.story.title,summary:piece.story.summary,stateCode:piece.story.stateBrain?.stateCode});
+      const m=piece.metadata||{};
+      validateVisual({caption:m.visualCaption||safeCaption(piece.headline),summary:m.visualSummary||context(piece.story,piece.copy),source:m.visualSource,imageUrl:piece.imageUrl,metadata:m});
+    }
+    await prisma.publication.update({where:{id:publication.id},data:{metadata:{phase:'SENDING',pieceStatus:piece.status,platform:account.platform}}});
     let result;
-    if(account.platform==='FACEBOOK'||account.platform==='INSTAGRAM') result=await publishMeta(account,piece,{publicImageUrl:publicImageUrl(piece)});
-    else if(account.platform==='X'||account.platform==='TIKTOK') throw new Error(`${account.platform}_PUBLISHER_NOT_CONFIGURED`);
-    else if(account.platform==='TELEGRAM') result=await sendTelegram(piece,account);
-    else if(account.platform==='WEBSITE') throw new Error('WEBSITE_PUBLISHER_NOT_CONFIGURED');
-    const updated=await prisma.publication.update({where:{id:publication.id},data:{status:'PUBLISHED',publishedAt:new Date(),externalPostId:result.externalPostId||null,externalUrl:result.externalUrl||null,metadata:result.raw||result}});
+    if(account.platform==='FACEBOOK'||account.platform==='INSTAGRAM')result=await publishMeta(account,piece,{publicImageUrl:publicImageUrl(piece)});
+    else if(account.platform==='X'||account.platform==='TIKTOK')throw new Error(`${account.platform}_PUBLISHER_NOT_CONFIGURED`);
+    else if(account.platform==='TELEGRAM')result=await sendTelegram(piece,account);
+    else throw new Error(`${account.platform}_PUBLISHER_NOT_CONFIGURED`);
+    if(!result?.externalPostId)throw new Error('PUBLISHER_DID_NOT_RETURN_POST_ID: No se pudo confirmar el ID de la publicación');
+    const externalId=String(result.externalPostId);
+    const externalUrl=account.platform==='FACEBOOK'
+      ?(/^\d+_\d+$/.test(externalId)?`https://www.facebook.com/${externalId}`:/^\d+$/.test(externalId)?`https://www.facebook.com/photo/?fbid=${externalId}`:null)
+      :account.platform==='INSTAGRAM'?null:result.externalUrl||null;
+    const updated=await prisma.publication.update({where:{id:publication.id},data:{
+      status:'PUBLISHED',publishedAt:new Date(),externalPostId:externalId,externalUrl,
+      metadata:{phase:'ACKNOWLEDGED',providerResult:result.raw||result,channelId:account.externalAccountId}
+    }});
     await prisma.contentPiece.update({where:{id:piece.id},data:{status:'PUBLISHED'}});
     await prisma.socialAccount.update({where:{id:account.id},data:{lastCheckedAt:new Date(),lastError:null}}).catch(()=>{});
-    await prisma.activityEvent.create({data:{type:'CONTENT_PUBLISHED',entityType:'PUBLICATION',entityId:updated.id,title:`Publicado en ${account.platform}`,detail:piece.story.title}});
+    await prisma.activityEvent.create({data:{type:'CONTENT_PUBLISHED',entityType:'PUBLICATION',entityId:updated.id,title:`Publicado en ${account.platform}`,detail:piece.story.title}}).catch(e=>console.warn('Publication activity event:',e.message));
     return updated;
   }catch(e){
-    await prisma.publication.update({where:{id:publication.id},data:{status:'FAILED',errorCode:e.message.split(':')[0],errorMessage:e.message}});
-    await prisma.socialAccount.update({where:{id:account.id},data:{lastCheckedAt:new Date(),lastError:e.message,connectionStatus:/TOKEN|OAUTH|190|expired/i.test(e.message)?'ERROR':account.connectionStatus}}).catch(()=>{});
-    await prisma.systemError.create({data:{code:e.message.split(':')[0],module:'PUBLICATION',message:e.message,entityType:'CONTENT_PIECE',entityId:piece.id}});
+    const errorCode=publicationErrorCode(e),errorMessage=publicationErrorMessage(e);
+    await prisma.publication.update({where:{id:publication.id},data:{status:'FAILED',errorCode,errorMessage,metadata:{phase:'FAILED',platform:account.platform}}}).catch(err=>console.error('Publication failure logging:',err.message));
+    await prisma.socialAccount.update({where:{id:account.id},data:{lastCheckedAt:new Date(),lastError:errorMessage,connectionStatus:/TOKEN|OAUTH|190|expired/i.test(errorMessage)?'ERROR':account.connectionStatus}}).catch(()=>{});
+    await prisma.systemError.create({data:{code:errorCode,module:'PUBLICATION',message:errorMessage,entityType:'CONTENT_PIECE',entityId:piece.id}}).catch(()=>{});
     throw e;
   }
 }
